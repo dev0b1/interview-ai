@@ -16,7 +16,7 @@ export default async function InterviewsPage() {
       <ul className="space-y-2">
         {items.map((it) => (
           <li key={it.id}>
-            <a href={`/interviews/${it.id}`} className="text-blue-600">{it.id}</a> — {it.status} — {it.created_at ? new Date(it.created_at).toLocaleString() : '—'}
+            <a href={`/interviews/${it.id}`} className="text-blue-600">{it.id}</a> — {it.status} — {it.created_at ? new Date(it.created_at).toLocaleString('en-US') : '—'}
           </li>
         ))}
       </ul>

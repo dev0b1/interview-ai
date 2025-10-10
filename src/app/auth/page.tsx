@@ -15,9 +15,9 @@ export default function AuthPage() {
     setStatus('loading');
     try {
   const redirectTo = typeof window !== 'undefined' ? `${window.location.origin}/dashboard` : undefined;
-      const result = await supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo } });
-      if ((result as any)?.error) {
-        console.error('signInWithOAuth error', (result as any).error);
+      const result = await supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo } }) as unknown as { error?: unknown } | null;
+      if (result && (result as { error?: unknown }).error) {
+        console.error('signInWithOAuth error', (result as { error?: unknown }).error);
         setStatus('error');
       } else {
         setStatus('redirecting');

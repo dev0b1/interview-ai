@@ -2,8 +2,9 @@
 
 import React from "react";
 import { getHistory, InterviewRecord } from "../../lib/history";
-import { useRequireAuth } from "../../lib/useRequireAuth";
-import { useAuthContext } from "../../lib/AuthProvider";
+import type { SupabaseClient } from '@supabase/supabase-js';
+import ClientFormattedDate from "../../components/ClientFormattedDate";
+import { useAuth } from "../../lib/useAuth";
 
 // (auth enforcement is handled inside the component)
 
@@ -21,11 +22,11 @@ function smallBarChart(data: number[]) {
 
 export default function DashboardPage() {
   // enforce auth (keeps previous behavior for immediate redirect checks)
-  const _auth = useRequireAuth();
+  const _auth = useAuth();
   const [history, setHistory] = React.useState<InterviewRecord[]>([]);
   const [credits, setCredits] = React.useState<number | null>(null);
 
-  const { supabase } = useAuthContext();
+  const { supabase } = _auth;
 
   const fetchCredits = React.useCallback(async () => {
     if (!supabase) return;
@@ -159,7 +160,7 @@ export default function DashboardPage() {
               <li key={r.id} className="flex items-center justify-between">
                 <div>
                   <div className="font-medium">{r.name}</div>
-                  <div className="text-sm text-gray-500">{new Date(r.date).toLocaleString()}</div>
+                  <div className="text-sm text-gray-500"><ClientFormattedDate iso={r.date} /></div>
                 </div>
                 <div className="text-sm text-gray-700">{r.score ? `${r.score}/100` : "—"}</div>
               </li>
@@ -173,7 +174,7 @@ export default function DashboardPage() {
   );
 }
 
-function PaymentHistory({ supabase }: { supabase: any | null }) {
+function PaymentHistory({ supabase }: { supabase: SupabaseClient | null }) {
   type PaymentItem = { id: string; amount?: number; currency?: string; created_at?: string };
   const [payments, setPayments] = React.useState<PaymentItem[]>([]);
 
@@ -199,7 +200,7 @@ function PaymentHistory({ supabase }: { supabase: any | null }) {
     <ul className="space-y-2 text-sm">
       {payments.map((p) => (
         <li key={p.id} className="flex justify-between">
-          <div>{p.created_at ? new Date(p.created_at).toLocaleString() : '—'}</div>
+          <div>{p.created_at ? <ClientFormattedDate iso={p.created_at} /> : '—'}</div>
           <div className="text-right">{p.amount ? `$${p.amount}` : '—'} {p.currency}</div>
         </li>
       ))}

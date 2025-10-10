@@ -11,13 +11,9 @@ export default function ConditionalLayout({ children }: { children: React.ReactN
   // Pages that should NOT show the sidebar / client layout
   const publicPaths = ['/', '/auth'];
 
-  if (publicPaths.includes(pathname || '/')) {
-    return <>{children}</>;
-  }
-
   return (
     <AuthProvider>
-      <ClientLayout>{children}</ClientLayout>
+      {publicPaths.includes(pathname || '/') ? <>{children}</> : <ClientLayout>{children}</ClientLayout>}
     </AuthProvider>
   );
 }

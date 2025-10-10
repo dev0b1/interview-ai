@@ -4,11 +4,23 @@ import React from "react";
 import InterviewRoom from "../../components/InterviewRoom";
 import InterviewSetup from "../../components/InterviewSetup";
 import { motion } from "framer-motion";
-import { useRequireAuth } from "../../lib/useRequireAuth";
+import { useAuth } from "../../lib/useAuth";
+import { useRouter } from 'next/navigation';
 
 export default function InterviewPage() {
-  // enforce auth
-  const _auth = useRequireAuth();
+  // enforce auth at page level so unauthenticated visitors are redirected early
+  const { session, initializing } = useAuth();
+  const router = useRouter();
+
+  React.useEffect(() => {
+    if (!initializing && !session) {
+      try {
+        router.replace('/auth');
+      } catch {
+        window.location.href = '/auth';
+      }
+    }
+  }, [initializing, session, router]);
   const [stage, setStage] = React.useState<"setup" | "live">("setup");
   const [name, setName] = React.useState("");
   const [topic, setTopic] = React.useState("");

@@ -1,11 +1,12 @@
 "use client";
 
 import React from "react";
-import { useRequireAuth } from "../../lib/useRequireAuth";
+import { useAuth } from "../../lib/useAuth";
 
 export default function SettingsPage() {
   // enforce auth
-  const _auth = useRequireAuth();
+  const _auth = useAuth();
+  const { signOut } = _auth;
   const [dark, setDark] = React.useState(false);
 
   React.useEffect(() => {
@@ -30,6 +31,24 @@ export default function SettingsPage() {
       <div>
         <div className="font-medium">Audio device</div>
         <div className="text-sm text-gray-500">Select microphone and speaker (coming soon)</div>
+      </div>
+
+      <div className="pt-4">
+        <button
+          className="px-4 py-2 bg-red-600 text-white rounded"
+          onClick={async () => {
+            try {
+              await signOut();
+              // send the user to the auth page after sign out
+              window.location.href = '/auth';
+            } catch (err) {
+              console.error('Sign out failed', err);
+              alert('Sign out failed');
+            }
+          }}
+        >
+          Sign out
+        </button>
       </div>
     </div>
   );

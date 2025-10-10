@@ -2,11 +2,12 @@
 
 import React from "react";
 import { getHistory, deleteInterview, clearHistory, InterviewRecord } from "../../lib/history";
-import { useRequireAuth } from "../../lib/useRequireAuth";
+import ClientFormattedDate from "../../components/ClientFormattedDate";
+import { useAuth } from "../../lib/useAuth";
 
 export default function HistoryPage() {
   // enforce auth
-  const _auth = useRequireAuth();
+  useAuth();
   const [list, setList] = React.useState<InterviewRecord[]>([]);
 
   React.useEffect(() => setList(getHistory()), []);
@@ -48,7 +49,7 @@ export default function HistoryPage() {
             <li key={r.id} className="flex items-center justify-between p-3 border rounded">
               <div>
                 <div className="font-medium">{r.name}</div>
-                <div className="text-sm text-gray-500">{new Date(r.date).toLocaleString()}</div>
+                <div className="text-sm text-gray-500"><ClientFormattedDate iso={r.date} /></div>
               </div>
               <div className="flex items-center gap-3">
                 <div className="text-sm text-gray-700">{r.score ? `${r.score}/100` : "—"}</div>

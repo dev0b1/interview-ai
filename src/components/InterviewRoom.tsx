@@ -11,6 +11,8 @@ import {
 import TranscriptPanel, { Entry } from "./TranscriptPanel";
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 import SummaryModal from "./SummaryModal";
+import { useAuth } from "../lib/useAuth";
+import { useRouter } from 'next/navigation';
 
 type Props = {
   name: string;
@@ -194,7 +196,11 @@ export default function InterviewRoom({ name, topic, personality, autoJoin }: Pr
   const [interviewId, setInterviewId] = React.useState<string | null>(null);
   const [isRecording, setIsRecording] = React.useState(false);
   const [uploadStatus, setUploadStatus] = React.useState<'idle' | 'uploading' | 'success' | 'error'>('idle');
-  // client-side supabase will be created on demand to read session for upload
+  const [uploadErrorText, setUploadErrorText] = React.useState<string | null>(null);
+  // option: read session from global auth context so uploads include user's access token when available
+  const { session } = useAuth();
+  const router = useRouter();
+  // client-side supabase (fallback) will be created on demand to read session for upload if needed
   const supabaseClientForBrowser = React.useMemo(() => {
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
     const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -221,6 +227,13 @@ export default function InterviewRoom({ name, topic, personality, autoJoin }: Pr
         mr.onstop = async () => {
           setIsRecording(false);
           try {
+            // don't attempt upload when there's no recorded data
+            if (!recordedChunks || recordedChunks.length === 0) {
+              console.warn('no audio recorded — skipping upload');
+              setUploadStatus('idle');
+              return;
+            }
+
             const blob = new Blob(recordedChunks, { type: 'audio/webm' });
             const form = new FormData();
             const id = interviewId || (Math.random().toString(36).slice(2, 10));
@@ -229,25 +242,39 @@ export default function InterviewRoom({ name, topic, personality, autoJoin }: Pr
             const base = process.env.NEXT_PUBLIC_BASE_URL || '';
             setUploadStatus('uploading');
             const headers: Record<string, string> = {};
-                try {
-                  if (supabaseClientForBrowser && typeof supabaseClientForBrowser.auth?.getSession === 'function') {
-                    const s = await supabaseClientForBrowser.auth.getSession();
-                    const access = s?.data?.session?.access_token;
-                    if (access) headers['Authorization'] = `Bearer ${access}`;
-                  }
-                } catch {
-                  // ignore and continue; server will reject unauthorized uploads
-                }
+
+            // Prefer session from useAuth(); fall back to client supabase if available
+            try {
+              const accessFromCtx = session?.access_token;
+              if (accessFromCtx) {
+                headers['Authorization'] = `Bearer ${accessFromCtx}`;
+              } else if (supabaseClientForBrowser && typeof supabaseClientForBrowser.auth?.getSession === 'function') {
+                const s = await supabaseClientForBrowser.auth.getSession();
+                const access = s?.data?.session?.access_token;
+                if (access) headers['Authorization'] = `Bearer ${access}`;
+              }
+            } catch (_err) {
+              // ignore and continue; server will reject unauthorized uploads if needed
+            }
+
             const res = await fetch(`${base}/api/interviews/audio/upload`, { method: 'POST', body: form, headers });
-            if (!res.ok) throw new Error('upload failed');
+            if (!res.ok) {
+              const text = await res.text().catch(() => '<no-body>');
+              console.error('audio upload failed', res.status, text);
+              setUploadStatus('error');
+              setUploadErrorText(`Upload failed (${res.status}): ${text}`);
+              return;
+            }
             setUploadStatus('success');
+            setUploadErrorText(null);
             // if we didn't have an interviewId yet, store the returned id (server doesn't return one here, so keep id)
             if (!interviewId) setInterviewId(id);
             // clear chunks
             recordedChunks = [];
-          } catch {
-            console.error('audio upload failed');
+          } catch (err) {
+            console.error('audio upload failed', err);
             setUploadStatus('error');
+            setUploadErrorText(String(err ?? 'unknown'));
           }
         };
         mr.start();
@@ -255,13 +282,13 @@ export default function InterviewRoom({ name, topic, personality, autoJoin }: Pr
         recorder = mr;
   const win = window as unknown as { __localRecorder?: MediaRecorder };
   win.__localRecorder = mr;
-      } catch {
-        console.warn('could not start local recording');
+      } catch (err) {
+        console.warn('could not start local recording', err);
       }
     }
 
-    // start recording when component mounts if autoJoin or connected
-    if (autoJoin || connected) {
+    // start recording only when we are actually connected to the room
+    if (connected) {
       startRecording();
     }
 
@@ -276,7 +303,7 @@ export default function InterviewRoom({ name, topic, personality, autoJoin }: Pr
         // ignore cleanup errors
       }
     };
-  }, [autoJoin, connected, interviewId, supabaseClientForBrowser]);
+  }, [connected, interviewId, supabaseClientForBrowser, session?.access_token]);
 
   React.useEffect(() => {
     let raf = 0;
@@ -429,9 +456,21 @@ export default function InterviewRoom({ name, topic, personality, autoJoin }: Pr
     );
   }
 
-  async function join() {
+  const join = React.useCallback(async () => {
     try {
       setConnecting(true);
+
+      // require a signed-in session before allowing join + uploads
+      if (!session || !session.access_token) {
+        // push user to auth page to sign in
+        try {
+          router.replace('/auth');
+        } catch (err) {
+          // fallback to full-page navigation
+          window.location.href = '/auth';
+        }
+        return;
+      }
 
 
   // request microphone + camera permission for local preview
@@ -483,7 +522,27 @@ export default function InterviewRoom({ name, topic, personality, autoJoin }: Pr
     } finally {
       setConnecting(false);
     }
-  };
+  }, [session, router, name]);
+
+  const retryUpload = React.useCallback(() => {
+    // force a stop/start cycle of the recorder to re-trigger onstop upload flow
+    try {
+      const win = window as unknown as { __localRecorder?: MediaRecorder };
+      const rec = win.__localRecorder;
+      if (rec && rec.state !== 'inactive') {
+        rec.stop();
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  // Auto-join when autoJoin prop is set. join() is a stable callback.
+  React.useEffect(() => {
+    if (autoJoin) {
+      void join();
+    }
+  }, [autoJoin, join]);
 
   return (
   <div className="w-full max-w-4xl mx-auto bg-white rounded-2xl shadow-lg p-6">
@@ -502,6 +561,12 @@ export default function InterviewRoom({ name, topic, personality, autoJoin }: Pr
             {uploadStatus === 'uploading' && <span className="text-amber-600">Uploading…</span>}
             {uploadStatus === 'success' && <span className="text-emerald-600">Upload OK</span>}
             {uploadStatus === 'error' && <span className="text-red-600">Upload failed</span>}
+            {uploadStatus === 'error' && uploadErrorText ? (
+              <div className="mt-2 text-xs text-red-600">
+                <div>{uploadErrorText}</div>
+                <button onClick={retryUpload} className="mt-1 px-2 py-1 bg-red-100 text-red-700 rounded text-xs">Retry</button>
+              </div>
+            ) : null}
           </div>
         </div>
       </div>
