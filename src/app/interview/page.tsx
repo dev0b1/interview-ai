@@ -1,0 +1,38 @@
+"use client";
+
+import React from "react";
+import InterviewRoom from "../../components/InterviewRoom";
+import InterviewSetup from "../../components/InterviewSetup";
+import { motion } from "framer-motion";
+import { useRequireAuth } from "../../lib/useRequireAuth";
+
+export default function InterviewPage() {
+  // enforce auth
+  const _auth = useRequireAuth();
+  const [stage, setStage] = React.useState<"setup" | "live">("setup");
+  const [name, setName] = React.useState("");
+  const [topic, setTopic] = React.useState("");
+  const [personality, setPersonality] = React.useState("");
+
+  function handleStart(opts: { name: string; topic: string; personality: string }) {
+    setName(opts.name || "");
+    setTopic(opts.topic || "");
+    setPersonality(opts.personality || "Professional & Calm");
+    setStage("live");
+  }
+
+  return (
+    <div className="flex flex-col gap-6">
+      {stage === "setup" ? (
+        <motion.div key="setup" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="bg-white rounded-2xl shadow-lg p-6">
+          <h2 className="text-xl font-semibold mb-3">Join Interview</h2>
+          <InterviewSetup onStart={handleStart} initialName={name} />
+        </motion.div>
+      ) : (
+        <motion.div key="live" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
+          <InterviewRoom name={name} topic={topic} personality={personality} autoJoin={true} />
+        </motion.div>
+      )}
+    </div>
+  );
+}

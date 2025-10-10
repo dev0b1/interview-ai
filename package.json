@@ -6,22 +6,34 @@
     "dev": "next dev --turbopack",
     "build": "next build --turbopack",
     "start": "next start",
-    "lint": "eslint"
+    "db:migrate": "psql \"$DATABASE_URL\" -f supabase/migrations/20251009_create_payments_subscriptions.sql && psql \"$DATABASE_URL\" -f supabase/migrations/20251010_create_checkout_sessions.sql",
+    "db:push": "supabase db push --schema supabase/migrations",
+    "db:migrate-node": "node ./scripts/run-migrations.js",
+    "lint": "eslint --ext .ts,.tsx,.js,.jsx src/",
+    "format": "prettier --write \"src/**/*.{ts,tsx,js,jsx,json,md}\""
   },
   "dependencies": {
+    "@livekit/components-react": "^2.9.15",
+    "@supabase/supabase-js": "2.26.0",
+    "livekit-client": "^2.15.8",
+    "livekit-server-sdk": "^2.14.0",
+    "lucide-react": "^0.545.0",
+    "next": "15.5.4",
+    "pg": "^8.10.0",
     "react": "19.1.0",
-    "react-dom": "19.1.0",
-    "next": "15.5.4"
+    "react-dom": "19.1.0"
   },
   "devDependencies": {
-    "typescript": "^5",
+    "@eslint/eslintrc": "^3",
     "@types/node": "^20",
+    "@types/pg": "^8.15.5",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "@tailwindcss/postcss": "^4",
-    "tailwindcss": "^4",
+    "autoprefixer": "^10",
     "eslint": "^9",
     "eslint-config-next": "15.5.4",
-    "@eslint/eslintrc": "^3"
+    "framer-motion": "^12.23.22",
+    "tailwindcss": "^3.4.7",
+    "typescript": "^5"
   }
 }

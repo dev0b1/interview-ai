@@ -38,4 +38,25 @@ Notes
 Next steps
 
 - Tell me what your app will do and I can scaffold pages, components, and types.
+# Database & Supabase setup
+
+- We use Supabase for storing interviews and Drizzle ORM for migrations/schema.
+
+1. Install additional packages
+
+```bash
+npm install @supabase/supabase-js drizzle-orm drizzle-kit
+```
+
+2. Create the `interviews` table using the provided SQL migration in `drizzle/migrations/0001_create_interviews.sql` or run `drizzle-kit` migration tooling.
+
+3. Set env vars in `.env.local` (Next.js):
+
+- NEXT_PUBLIC_SUPABASE_URL
+- SUPABASE_SERVICE_ROLE_KEY
+- NEXT_PUBLIC_SUPABASE_ANON_KEY (optional for client-side)
+
+4. Run the migration and then start the dev server.
+
+If you want, I can add `drizzle-kit` config and a npm script to run migrations.
 # interview-ai

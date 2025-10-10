@@ -1,0 +1,24 @@
+
+# Option B requirements: LiveKit agents with silero & turn-detector + plugins
+# Note: plugin package names and extras may vary across livekit versions. Adjust pins to your environment.
+## Comment out heavy extras for local CPU development. Uncomment for full installs.
+# livekit-agents[silero,turn-detector]~=1.2
+livekit-agents
+livekit-plugins-openai
+# livekit-plugins-noise-cancellation~=0.2
+
+# Core LLM/STT/TTS SDKs
+openai
+deepgram-sdk
+
+# FastAPI wrapper for HTTP integration (optional)
+fastapi
+uvicorn[standard]
+pydantic
+
+# Env loader for local development
+python-dotenv
+
+# Optional: torch/torchaudio for local silero (uncomment & pick correct wheel for your platform)
+# torch
+# torchaudio

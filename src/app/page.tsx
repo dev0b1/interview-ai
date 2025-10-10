@@ -1,103 +1,275 @@
-import Image from "next/image";
+"use client";
 
-export default function Home() {
+import Link from 'next/link';
+import { motion } from 'framer-motion';
+
+const fadeUp = { hidden: { opacity: 0, y: 12 }, visible: { opacity: 1, y: 0 } };
+
+export default function LandingPage() {
   return (
-    <div className="font-sans grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="font-mono list-inside list-decimal text-sm/6 text-center sm:text-left">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] font-mono font-semibold px-1 py-0.5 rounded">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
-
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+    <div className="min-h-screen bg-white">
+      {/* Navigation */}
+      <nav className="border-b border-gray-200">
+        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+          <div className="text-xl font-semibold text-gray-900">InterviewAI</div>
+          <div className="flex items-center gap-6">
+            <Link href="/auth" className="text-gray-600 hover:text-gray-900">Sign in</Link>
+            <Link href="/interview" className="px-4 py-2 bg-gray-900 text-white rounded-md hover:bg-gray-800">
+              Get Started
+            </Link>
+          </div>
         </div>
+      </nav>
+
+      <main>
+        {/* Hero Section */}
+        <section className="max-w-7xl mx-auto px-6 pt-20 pb-24">
+          <motion.div 
+            initial="hidden"
+            animate="visible"
+            variants={fadeUp}
+            transition={{ duration: 0.5 }}
+            className="max-w-3xl"
+          >
+            <h1 className="text-6xl font-bold text-gray-900 mb-6 leading-tight">
+              Ace your next interview with AI-powered practice
+            </h1>
+            <p className="text-xl text-gray-600 mb-10 leading-relaxed">
+              Practice real-time voice interviews, get instant feedback on your performance, and track your improvement over time. Build confidence before the interview that matters.
+            </p>
+            <div className="flex items-center gap-4">
+              <Link 
+                href="/interview" 
+                className="px-8 py-4 bg-gray-900 text-white font-medium rounded-lg hover:bg-gray-800 transition-colors"
+              >
+                Start practicing for free
+              </Link>
+              <Link 
+                href="#demo" 
+                className="px-8 py-4 text-gray-700 font-medium hover:text-gray-900"
+              >
+                See how it works →
+              </Link>
+            </div>
+            <p className="text-sm text-gray-500 mt-6">No credit card required • Unlimited practice sessions</p>
+          </motion.div>
+        </section>
+
+        {/* Stats Section */}
+        <section className="border-y border-gray-200 bg-gray-50">
+          <div className="max-w-7xl mx-auto px-6 py-16">
+            <div className="grid grid-cols-3 gap-12">
+              <div>
+                <div className="text-4xl font-bold text-gray-900 mb-2">12,000+</div>
+                <div className="text-gray-600">Practice interviews completed</div>
+              </div>
+              <div>
+                <div className="text-4xl font-bold text-gray-900 mb-2">89%</div>
+                <div className="text-gray-600">Users report improved confidence</div>
+              </div>
+              <div>
+                <div className="text-4xl font-bold text-gray-900 mb-2">4.8/5</div>
+                <div className="text-gray-600">Average user rating</div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* Features Section */}
+        <section className="max-w-7xl mx-auto px-6 py-24">
+          <motion.div
+            initial="hidden"
+            whileInView="visible"
+            viewport={{ once: true }}
+            variants={fadeUp}
+            transition={{ duration: 0.5 }}
+          >
+            <h2 className="text-4xl font-bold text-gray-900 mb-16">Everything you need to prepare</h2>
+            
+            <div className="grid grid-cols-2 gap-16">
+              <div>
+                <div className="w-12 h-12 bg-gray-900 rounded-lg mb-6"></div>
+                <h3 className="text-2xl font-semibold text-gray-900 mb-4">Real-time voice interviews</h3>
+                <p className="text-gray-600 leading-relaxed">
+                  Practice with an AI interviewer that conducts natural conversations. Answer questions out loud and get follow-ups based on your responses, just like a real interview.
+                </p>
+              </div>
+
+              <div>
+                <div className="w-12 h-12 bg-gray-900 rounded-lg mb-6"></div>
+                <h3 className="text-2xl font-semibold text-gray-900 mb-4">Instant performance analysis</h3>
+                <p className="text-gray-600 leading-relaxed">
+                  Get detailed feedback immediately after each interview. See your confidence score, speaking pace, filler word usage, and receive personalized tips to improve.
+                </p>
+              </div>
+
+              <div>
+                <div className="w-12 h-12 bg-gray-900 rounded-lg mb-6"></div>
+                <h3 className="text-2xl font-semibold text-gray-900 mb-4">Interview transcripts</h3>
+                <p className="text-gray-600 leading-relaxed">
+                  Review full transcripts of every interview. Analyze your answers, identify patterns in your responses, and refine your talking points for real interviews.
+                </p>
+              </div>
+
+              <div>
+                <div className="w-12 h-12 bg-gray-900 rounded-lg mb-6"></div>
+                <h3 className="text-2xl font-semibold text-gray-900 mb-4">Progress tracking</h3>
+                <p className="text-gray-600 leading-relaxed">
+                  Track your improvement across multiple practice sessions. See how your confidence and clarity scores increase as you practice more.
+                </p>
+              </div>
+            </div>
+          </motion.div>
+        </section>
+
+        {/* How it works */}
+        <section className="bg-gray-900 text-white py-24">
+          <div className="max-w-7xl mx-auto px-6">
+            <motion.div
+              initial="hidden"
+              whileInView="visible"
+              viewport={{ once: true }}
+              variants={fadeUp}
+              transition={{ duration: 0.5 }}
+            >
+              <h2 className="text-4xl font-bold mb-6">How it works</h2>
+              <p className="text-xl text-gray-400 mb-16 max-w-2xl">
+                Get interview-ready in minutes, not weeks
+              </p>
+
+              <div className="grid grid-cols-3 gap-12">
+                <div>
+                  <div className="text-6xl font-bold text-gray-700 mb-6">01</div>
+                  <h3 className="text-xl font-semibold mb-3">Choose your role</h3>
+                  <p className="text-gray-400 leading-relaxed">
+                    Select the type of role you're interviewing for—software engineering, product management, consulting, or general behavioral questions.
+                  </p>
+                </div>
+
+                <div>
+                  <div className="text-6xl font-bold text-gray-700 mb-6">02</div>
+                  <h3 className="text-xl font-semibold mb-3">Start the interview</h3>
+                  <p className="text-gray-400 leading-relaxed">
+                    Click record and begin speaking. The AI interviewer will ask questions and respond naturally to your answers in real-time.
+                  </p>
+                </div>
+
+                <div>
+                  <div className="text-6xl font-bold text-gray-700 mb-6">03</div>
+                  <h3 className="text-xl font-semibold mb-3">Get feedback</h3>
+                  <p className="text-gray-400 leading-relaxed">
+                    Review your performance, read the transcript, and see actionable insights to improve for your next practice session.
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-16">
+                <Link 
+                  href="/interview" 
+                  className="inline-block px-8 py-4 bg-white text-gray-900 font-medium rounded-lg hover:bg-gray-100 transition-colors"
+                >
+                  Try it now
+                </Link>
+              </div>
+            </motion.div>
+          </div>
+        </section>
+
+        {/* Testimonials */}
+        <section className="max-w-7xl mx-auto px-6 py-24">
+          <motion.div
+            initial="hidden"
+            whileInView="visible"
+            viewport={{ once: true }}
+            variants={fadeUp}
+            transition={{ duration: 0.5 }}
+          >
+            <h2 className="text-4xl font-bold text-gray-900 mb-16">What people are saying</h2>
+            
+            <div className="grid grid-cols-3 gap-8">
+              <div className="border border-gray-200 rounded-lg p-8">
+                <p className="text-gray-700 mb-6 leading-relaxed">
+                  "Practicing out loud made such a difference. I felt way more prepared and confident going into my real interviews."
+                </p>
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-gray-300 rounded-full"></div>
+                  <div>
+                    <div className="font-medium text-gray-900">Sarah Chen</div>
+                    <div className="text-sm text-gray-500">Software Engineer</div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="border border-gray-200 rounded-lg p-8">
+                <p className="text-gray-700 mb-6 leading-relaxed">
+                  "The feedback on filler words was eye-opening. I had no idea I said 'um' that much until I saw the data."
+                </p>
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-gray-300 rounded-full"></div>
+                  <div>
+                    <div className="font-medium text-gray-900">Michael Torres</div>
+                    <div className="text-sm text-gray-500">Product Manager</div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="border border-gray-200 rounded-lg p-8">
+                <p className="text-gray-700 mb-6 leading-relaxed">
+                  "Being able to practice anytime without scheduling with another person was a game changer for my prep."
+                </p>
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-gray-300 rounded-full"></div>
+                  <div>
+                    <div className="font-medium text-gray-900">Priya Patel</div>
+                    <div className="text-sm text-gray-500">Consultant</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        </section>
+
+        {/* Final CTA */}
+        <section className="border-t border-gray-200 bg-gray-50">
+          <div className="max-w-7xl mx-auto px-6 py-24 text-center">
+            <motion.div
+              initial="hidden"
+              whileInView="visible"
+              viewport={{ once: true }}
+              variants={fadeUp}
+              transition={{ duration: 0.5 }}
+            >
+              <h2 className="text-5xl font-bold text-gray-900 mb-6">
+                Start practicing today
+              </h2>
+              <p className="text-xl text-gray-600 mb-10 max-w-2xl mx-auto">
+                Join thousands of job seekers who are using AI to prepare for their interviews and land their dream jobs.
+              </p>
+              <Link 
+                href="/interview" 
+                className="inline-block px-8 py-4 bg-gray-900 text-white font-medium rounded-lg hover:bg-gray-800 transition-colors"
+              >
+                Start your first interview
+              </Link>
+              <p className="text-sm text-gray-500 mt-6">Free to start • No credit card required</p>
+            </motion.div>
+          </div>
+        </section>
+
+        {/* Footer */}
+        <footer className="border-t border-gray-200">
+          <div className="max-w-7xl mx-auto px-6 py-12">
+            <div className="flex items-center justify-between">
+              <div className="text-gray-600">© 2025 InterviewAI. All rights reserved.</div>
+              <div className="flex items-center gap-8">
+                <Link href="/privacy" className="text-gray-600 hover:text-gray-900">Privacy</Link>
+                <Link href="/terms" className="text-gray-600 hover:text-gray-900">Terms</Link>
+                <Link href="/contact" className="text-gray-600 hover:text-gray-900">Contact</Link>
+              </div>
+            </div>
+          </div>
+        </footer>
       </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
     </div>
   );
 }
