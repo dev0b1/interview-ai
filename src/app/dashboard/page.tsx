@@ -2,7 +2,7 @@
 
 import React from "react";
 import { getHistory, InterviewRecord } from "../../lib/history";
-import type { SupabaseClient } from '@supabase/supabase-js';
+// supabase client type was previously imported but is not used in this file
 import ClientFormattedDate from "../../components/ClientFormattedDate";
 import { useAuth } from "../../lib/useAuth";
 
@@ -105,51 +105,31 @@ export default function DashboardPage() {
       </div>
 
       <div className="bg-white rounded-2xl shadow-lg p-6">
-        <h3 className="text-lg font-semibold mb-3">Billing</h3>
-        <p className="text-sm text-gray-500 mb-4">Buy interview credits to unlock paid features.</p>
-        <div>
-          <button
-            className="px-4 py-2 bg-sky-600 text-white rounded"
-            onClick={async () => {
-              try {
-                // include passthrough user id if available
-                const productId = process.env.NEXT_PUBLIC_PADDLE_PRODUCT_ID || 'demo-product';
-                let passthrough: string | undefined = undefined;
-                if (supabase) {
-                  try {
-                    const s = await supabase.auth.getUser();
-                    const user = (s as unknown as { data?: { user?: { id?: string } } })?.data?.user;
-                    if (user?.id) passthrough = user.id;
-                  } catch {
-                    // ignore
-                  }
-                }
-
-                const res = await fetch('/api/payments/create', {
-                  method: 'POST',
-                  headers: { 'content-type': 'application/json' },
-                  body: JSON.stringify({ amount: '10.00', currency: 'USD', product_id: productId, passthrough }),
-                });
-                const j = await res.json();
-                if (j.checkout_url) {
-                  window.location.href = j.checkout_url;
-                } else {
-                  alert('Failed to create checkout');
-                }
-              } catch (err) {
-                console.error(err);
-                alert('Payment initiation failed');
-              }
-            }}
-          >
-            Buy $10 Credits
-          </button>
+        <h3 className="text-lg font-semibold mb-3">Post-interview analysis</h3>
+        <p className="text-sm text-gray-500 mb-4">Quick metrics from your recent interviews.</p>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="p-4 bg-gray-50 rounded">
+            <div className="text-sm text-gray-500">Avg. Score</div>
+            <div className="text-2xl font-bold">{history.length ? Math.round((history.reduce((s, r) => s + (r.score || 0), 0) / history.length)) : '—'}</div>
+          </div>
+          <div className="p-4 bg-gray-50 rounded">
+            <div className="text-sm text-gray-500">Avg. Duration</div>
+            <div className="text-2xl font-bold">{history.length ? `${Math.round((history.reduce((s, r) => s + (r.durationSec || 0), 0) / history.length) / 60)}m` : '—'}</div>
+          </div>
+          <div className="p-4 bg-gray-50 rounded">
+            <div className="text-sm text-gray-500">Filler words</div>
+            <div className="text-2xl font-bold">{(function(){
+              const fillers = ['um','uh','like','you know','actually'];
+              let count = 0;
+              history.forEach(h => { if (h.notes) {
+                const txt = h.notes.toLowerCase();
+                fillers.forEach(f => { count += (txt.split(f).length - 1); });
+              }});
+              return count;
+            })()}</div>
+          </div>
         </div>
-      </div>
-
-      <div className="bg-white rounded-2xl shadow-lg p-6">
-        <h3 className="text-lg font-semibold mb-3">Payment History</h3>
-  <PaymentHistory supabase={supabase} />
+        <div className="mt-4 text-sm text-gray-500">Click an interview in Recent Interviews for a detailed report.</div>
       </div>
 
       <div className="bg-white rounded-2xl shadow-lg p-6">
@@ -174,36 +154,3 @@ export default function DashboardPage() {
   );
 }
 
-function PaymentHistory({ supabase }: { supabase: SupabaseClient | null }) {
-  type PaymentItem = { id: string; amount?: number; currency?: string; created_at?: string };
-  const [payments, setPayments] = React.useState<PaymentItem[]>([]);
-
-  const fetchPayments = React.useCallback(async () => {
-    if (!supabase) return;
-    try {
-      const s = await supabase.auth.getSession();
-      const token = (s as unknown as { data?: { session?: { access_token?: string } } })?.data?.session?.access_token;
-      if (!token) return;
-      const res = await fetch('/api/payments/list', { headers: { Authorization: `Bearer ${token}` } });
-      const j = await res.json();
-      if (j.payments) setPayments(j.payments as Array<{ id: string; amount?: number; currency?: string; created_at?: string }>);
-    } catch {
-      // ignore
-    }
-  }, [supabase]);
-
-  React.useEffect(() => { fetchPayments(); }, [fetchPayments]);
-
-  if (!payments.length) return <div className="text-sm text-gray-500">No payments yet.</div>;
-
-  return (
-    <ul className="space-y-2 text-sm">
-      {payments.map((p) => (
-        <li key={p.id} className="flex justify-between">
-          <div>{p.created_at ? <ClientFormattedDate iso={p.created_at} /> : '—'}</div>
-          <div className="text-right">{p.amount ? `$${p.amount}` : '—'} {p.currency}</div>
-        </li>
-      ))}
-    </ul>
-  );
-}

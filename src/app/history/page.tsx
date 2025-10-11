@@ -53,6 +53,7 @@ export default function HistoryPage() {
               </div>
               <div className="flex items-center gap-3">
                 <div className="text-sm text-gray-700">{r.score ? `${r.score}/100` : "—"}</div>
+                <button onClick={() => window.location.href = `/interviews/${r.id}`} className="px-2 py-1 text-sm border rounded">View</button>
                 <button onClick={() => handleDelete(r.id)} className="px-2 py-1 text-sm border rounded">Delete</button>
               </div>
             </li>

@@ -25,12 +25,15 @@ export default function InterviewPage() {
   const [name, setName] = React.useState("");
   const [topic, setTopic] = React.useState("");
   const [personality, setPersonality] = React.useState("");
+  const [autoJoinOnce, setAutoJoinOnce] = React.useState(false);
 
   function handleStart(opts: { name: string; topic: string; personality: string }) {
     setName(opts.name || "");
     setTopic(opts.topic || "");
     setPersonality(opts.personality || "Professional & Calm");
     setStage("live");
+    // enable a single auto-join for this session
+    setAutoJoinOnce(true);
   }
 
   return (
@@ -42,7 +45,7 @@ export default function InterviewPage() {
         </motion.div>
       ) : (
         <motion.div key="live" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
-          <InterviewRoom name={name} topic={topic} personality={personality} autoJoin={true} />
+          <InterviewRoom name={name} topic={topic} personality={personality} autoJoin={autoJoinOnce} onLeave={() => setAutoJoinOnce(false)} />
         </motion.div>
       )}
     </div>

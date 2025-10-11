@@ -1,6 +1,3 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabaseClient';
-
 // Small UUIDv4 generator (crypto-backed when available)
 function uuidv4(): string {
   try {
@@ -20,6 +17,11 @@ function uuidv4(): string {
 }
 
 type CreateBody = { amount?: string; currency?: string; product_id?: string };
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { NextRequest, NextResponse } from 'next/server';
+import { supabase } from '@/lib/supabaseClient';
+import { createTransaction } from '@/lib/paddleBilling';
 
 export async function POST(req: NextRequest) {
   try {
@@ -42,32 +44,29 @@ export async function POST(req: NextRequest) {
       // ignore DB write errors; we can still proceed
     }
 
-    // Prefer server-side Paddle API if credentials are provided
-    const PADDLE_VENDOR_ID = process.env.PADDLE_VENDOR_ID || '';
-    const PADDLE_API_KEY = process.env.PADDLE_API_KEY || '';
+    // Prefer Paddle Billing (modern) if API key is present
+    const billingKey = process.env.PADDLE_BILLING_API_KEY || process.env.PADDLE_API_KEY || '';
 
-    const passthrough = sessionId; // pass session id instead of user id
+    // Prefer passing the authenticated user id as passthrough so webhooks can map directly
+    const passthrough = userId || sessionId; // userId if available, otherwise session id
 
-    if (PADDLE_VENDOR_ID && PADDLE_API_KEY && product_id) {
-      // Create a checkout link via Paddle's API
-      const params = new URLSearchParams();
-      params.set('vendor_id', PADDLE_VENDOR_ID);
-      params.set('vendor_auth_code', PADDLE_API_KEY);
-      params.set('product_id', product_id);
-      params.set('price', amount);
-      params.set('currency', currency);
-      params.set('passthrough', passthrough);
-
-      const resp = await fetch('https://vendors.paddle.com/api/2.0/product/generate_pay_link', {
-        method: 'POST',
-        body: params,
-      });
-
-      const json = await resp.json();
-      if (json && json.success && json.response && json.response.url) {
-        return NextResponse.json({ checkout_url: json.response.url });
+    if (billingKey && product_id) {
+      try {
+        const base = process.env.NEXT_PUBLIC_BASE_URL || '';
+        const payload: any = {
+          items: [{ priceId: product_id, quantity: 1 }],
+          customData: { userId: passthrough },
+          checkoutSettings: { successUrl: `${base.replace(/\/$/, '')}/settings?payment=success` },
+        };
+        const tx = await createTransaction(payload);
+        // tx shape depends on SDK; attempt to return common fields
+        const transactionId = tx?.id ?? tx?.transaction?.id ?? tx?.data?.id;
+        const checkoutUrl = tx?.checkoutUrl ?? tx?.transaction?.checkoutUrl ?? tx?.data?.checkout_url ?? tx?.data?.checkoutUrl;
+        return NextResponse.json({ transactionId, checkoutUrl });
+      } catch (err) {
+        console.warn('Paddle Billing create transaction failed', err);
+        // fallthrough to classic fallback
       }
-      console.warn('Paddle create link failed', json);
     }
 
     // Fallback demo URL (non-authoritative)

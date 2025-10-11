@@ -81,6 +81,9 @@ async def entrypoint(ctx: agents.JobContext):
         llm=llm_instance,
         tts="cartesia/sonic-2:79a125e8-cd45-4c13-8a67-188112f4dd22",  # ✅ Correct Cartesia model
     )
+    # flag to indicate the session is active; handlers should check this to avoid
+    # calling into LiveKit internals after we've begun shutdown
+    session_active = True
     
     # Start the session
     await session.start(
@@ -92,6 +95,9 @@ async def entrypoint(ctx: agents.JobContext):
     try:
         async def _on_data(msg):
             try:
+                # ignore incoming data if we're shutting down
+                if not session_active:
+                    return
                 raw = None
                 if hasattr(msg, 'data'):
                     raw = msg.data
@@ -175,6 +181,9 @@ async def entrypoint(ctx: agents.JobContext):
             try:
                 async def _on_user_speech(event):
                     try:
+                        # guard against running after close
+                        if not session_active:
+                            return
                         # event shapes vary between providers
                         text = getattr(event, 'text', None)
                         confidence = None
@@ -189,6 +198,9 @@ async def entrypoint(ctx: agents.JobContext):
 
                 async def _on_agent_speech(event):
                     try:
+                        # guard against running after close
+                        if not session_active:
+                            return
                         text = getattr(event, 'text', None) or getattr(event, 'transcript', None)
                         if text:
                             _append_transcript('interviewer', text)
@@ -363,6 +375,42 @@ async def entrypoint(ctx: agents.JobContext):
             except Exception:
                 logger.exception('Agent: post-interview analysis failed')
 
+            # mark as inactive so handlers won't resume or process events
+            try:
+                session_active = False
+            except Exception:
+                # swallow; best-effort
+                pass
+
+            # Attempt to detach any listeners we registered to avoid callbacks
+            try:
+                if hasattr(session, 'off'):
+                    try:
+                        session.off('user_speech_committed', _on_user_speech)
+                    except Exception:
+                        pass
+                    try:
+                        session.off('agent_speech_committed', _on_agent_speech)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+
+            try:
+                if hasattr(ctx.room, 'off'):
+                    try:
+                        ctx.room.off('data_received', _on_data)
+                    except Exception:
+                        pass
+                elif hasattr(ctx.room, 'remove_listener'):
+                    try:
+                        ctx.room.remove_listener('data_received', _on_data)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+
+            # finally, close the session if possible
             if hasattr(session, 'aclose'):
                 try:
                     await session.aclose()

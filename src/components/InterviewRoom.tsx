@@ -19,6 +19,7 @@ type Props = {
   topic?: string;
   personality?: string;
   autoJoin?: boolean;
+  onLeave?: () => void;
 };
 
 // Minimal local types to avoid using `any` across this file and satisfy lint rules.
@@ -39,7 +40,7 @@ type LKRoomLike = {
 };
 // RemoteParticipantLike removed - not used in this file
 
-function ParticipantsPanel() {
+function ParticipantsPanel({ onLeave }: { onLeave?: () => void }) {
   const localHook = useLocalParticipant();
   const remotes = useRemoteParticipants();
   // useRoomContext returns the room instance directly in this version
@@ -79,9 +80,10 @@ function ParticipantsPanel() {
       if (room && typeof room.disconnect === "function") {
         await room.disconnect();
       }
-      } catch {
-        console.error("leave failed");
-      }
+      try { onLeave?.(); } catch (err) { console.error('onLeave callback failed', err); }
+    } catch (err) {
+      console.error("leave failed", err);
+    }
   };
 
   // recording helpers (attach recorder to window for debug)
@@ -200,6 +202,7 @@ export default function InterviewRoom({ name, topic, personality, autoJoin }: Pr
   // option: read session from global auth context so uploads include user's access token when available
   const { session } = useAuth();
   const router = useRouter();
+  const autoJoinTriggeredRef = React.useRef(false);
   // client-side supabase (fallback) will be created on demand to read session for upload if needed
   const supabaseClientForBrowser = React.useMemo(() => {
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
@@ -253,7 +256,7 @@ export default function InterviewRoom({ name, topic, personality, autoJoin }: Pr
                 const access = s?.data?.session?.access_token;
                 if (access) headers['Authorization'] = `Bearer ${access}`;
               }
-            } catch (_err) {
+            } catch {
               // ignore and continue; server will reject unauthorized uploads if needed
             }
 
@@ -402,7 +405,7 @@ export default function InterviewRoom({ name, topic, personality, autoJoin }: Pr
   };
 
   // Controls component: uses LiveKit hooks inside LiveKitRoom context
-  function Controls() {
+  function Controls({ onLeave }: { onLeave?: () => void }) {
   const room = useRoomContext() as unknown as LKRoomLike | null;
     const [mutedLocal, setMutedLocal] = React.useState(false);
 
@@ -439,8 +442,9 @@ export default function InterviewRoom({ name, topic, personality, autoJoin }: Pr
         }
         setToken(null);
         setConnected(false);
-      } catch {
-        console.error("leave failed");
+        try { onLeave?.(); } catch (err) { console.error('onLeave callback failed', err); }
+      } catch (err) {
+        console.error("leave failed", err);
       }
     };
 
@@ -466,7 +470,8 @@ export default function InterviewRoom({ name, topic, personality, autoJoin }: Pr
         try {
           router.replace('/auth');
         } catch (err) {
-          // fallback to full-page navigation
+          // fallback to full-page navigation (log for debugging)
+          console.warn('router.replace failed, falling back to full navigation', err);
           window.location.href = '/auth';
         }
         return;
@@ -539,7 +544,8 @@ export default function InterviewRoom({ name, topic, personality, autoJoin }: Pr
 
   // Auto-join when autoJoin prop is set. join() is a stable callback.
   React.useEffect(() => {
-    if (autoJoin) {
+    if (autoJoin && !autoJoinTriggeredRef.current) {
+      autoJoinTriggeredRef.current = true;
       void join();
     }
   }, [autoJoin, join]);

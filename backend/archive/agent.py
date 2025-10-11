@@ -72,6 +72,7 @@ async def entrypoint(ctx: agents.JobContext):
         llm=llm_instance,
         tts="cartesia/sonic-2:79a125e8-cd45-4c13-8a67-188112f4dd22",  # ✅ Correct Cartesia model
     )
+    session_active = True
     
     # Start the session
     await session.start(
@@ -83,6 +84,8 @@ async def entrypoint(ctx: agents.JobContext):
     try:
         async def _on_data(msg):
             try:
+                if not session_active:
+                    return
                 raw = None
                 if hasattr(msg, 'data'):
                     raw = msg.data
@@ -160,6 +163,25 @@ async def entrypoint(ctx: agents.JobContext):
         logger.info("🛑 Agent shutting down...")
     finally:
         # Cleanup
+        try:
+            session_active = False
+        except Exception:
+            pass
+
+        try:
+            if hasattr(ctx.room, 'off'):
+                try:
+                    ctx.room.off('data_received', _on_data)
+                except Exception:
+                    pass
+            elif hasattr(ctx.room, 'remove_listener'):
+                try:
+                    ctx.room.remove_listener('data_received', _on_data)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
         try:
             if hasattr(session, 'aclose'):
                 await session.aclose()
