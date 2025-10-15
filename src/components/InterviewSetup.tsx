@@ -2,9 +2,10 @@
 
 import React from "react";
 import { motion } from "framer-motion";
+import { useAuth } from "../lib/useAuth";
 
 type Props = {
-  onStart: (opts: { name: string; topic: string; personality: string }) => void;
+  onStart: (opts: { topic: string; personality: string }) => void;
   initialName?: string;
 };
 
@@ -16,7 +17,8 @@ const personalities = [
 ];
 
 export default function InterviewSetup({ onStart, initialName = "" }: Props) {
-  const [name, setName] = React.useState(initialName);
+  // No name input required — app requires authenticated users. Frontend will
+  // provide a descriptive name (display name + email fallback) when starting.
   const [topic, setTopic] = React.useState("Frontend Engineer");
   const [personality, setPersonality] = React.useState(personalities[0]);
 
@@ -25,10 +27,7 @@ export default function InterviewSetup({ onStart, initialName = "" }: Props) {
       <h2 className="text-xl font-semibold mb-4">Interview Setup</h2>
 
       <div className="grid gap-4">
-        <div>
-          <label className="block text-sm text-gray-600 mb-1">Your name</label>
-          <input value={name} onChange={(e) => setName(e.target.value)} className="w-full px-4 py-2 border rounded" placeholder="Jane Doe" />
-        </div>
+        {/* Name is taken from authenticated session; no input required */}
 
         <div>
           <label className="block text-sm text-gray-600 mb-1">Interview topic</label>
@@ -45,7 +44,7 @@ export default function InterviewSetup({ onStart, initialName = "" }: Props) {
         </div>
 
         <div className="flex justify-end">
-          <button onClick={() => onStart({ name, topic, personality })} className="px-4 py-2 bg-sky-600 text-white rounded">Join Interview</button>
+          <button onClick={() => onStart({ topic, personality })} className="px-4 py-2 bg-sky-600 text-white rounded">Join Interview</button>
         </div>
       </div>
     </motion.div>

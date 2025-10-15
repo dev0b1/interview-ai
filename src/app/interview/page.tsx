@@ -27,8 +27,11 @@ export default function InterviewPage() {
   const [personality, setPersonality] = React.useState("");
   const [autoJoinOnce, setAutoJoinOnce] = React.useState(false);
 
-  function handleStart(opts: { name: string; topic: string; personality: string }) {
-    setName(opts.name || "");
+  function handleStart(opts: { topic: string; personality: string }) {
+    // Construct a descriptive name from session: display name + email fallback
+    const display = session?.user?.user_metadata?.full_name || session?.user?.email || "Candidate";
+    const descriptive = `${display}`;
+    setName(descriptive);
     setTopic(opts.topic || "");
     setPersonality(opts.personality || "Professional & Calm");
     setStage("live");

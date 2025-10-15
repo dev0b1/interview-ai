@@ -1,426 +1,585 @@
-"""
-LiveKit AI Interviewer Agent - FIXED VERSION
-Compatible with livekit-agents >= 1.0.0
-
-Uses:
-- OpenRouter for LLM (mistralai/mistral-7b-instruct:free)
-- LiveKit Cloud's Deepgram for STT
-- LiveKit Cloud's Cartesia for TTS
-"""
-
 import os
 import asyncio
-import logging
 import json
+import logging
 from datetime import datetime
+from dataclasses import dataclass, field
+from typing import Optional, List, Dict
+from enum import Enum
 from dotenv import load_dotenv
+
 from livekit import agents
-from livekit.agents import Agent, AgentSession, WorkerOptions
-from livekit.plugins import openai
+from livekit.agents import (
+    Agent,
+    AgentSession,
+    JobContext,
+    WorkerOptions,
+    cli,
+    RunContext,
+    function_tool,
+)
+from livekit.agents.llm import ChatContext, ChatMessage
+from livekit.plugins import silero, openai
 
 load_dotenv()
 
-# Simple logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s"
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("interview-agent")
+
+
+# ==============================
+#       ENUMS & CONSTANTS
+# ==============================
+class InterviewMode(Enum):
+    """Interview difficulty/style modes"""
+    FRIENDLY = "friendly"  # Encouraging, supportive
+    STANDARD = "standard"  # Professional, balanced
+    CHALLENGING = "challenging"  # Tough follow-ups, stress testing
+
+
+class InterviewType(Enum):
+    """Types of interviews supported"""
+    TECHNICAL = "technical"
+    BEHAVIORAL = "behavioral"
+    LEADERSHIP = "leadership"
+    SALES = "sales"
+    CUSTOMER_SERVICE = "customer_service"
+    GENERAL = "general"
+
+
+# ==============================
+#       DATA MODELS
+# ==============================
+@dataclass
+class InterviewConfig:
+    """Configuration for interview customization"""
+    interview_type: InterviewType = InterviewType.GENERAL
+    mode: InterviewMode = InterviewMode.STANDARD
+    num_questions: int = 5
+    allow_adaptive_questions: bool = True
+    company_name: str = "Our Company"
+    job_title: str = "this position"
+    candidate_resume_summary: Optional[str] = None  # AI can reference this
+
+
+@dataclass
+class InterviewContext:
+    """Stores the state of the interview"""
+    candidate_name: str = "Candidate"
+    config: InterviewConfig = field(default_factory=InterviewConfig)
+    core_questions: List[str] = field(default_factory=list)
+    adaptive_questions: List[str] = field(default_factory=list)  # AI-generated
+    question_index: int = 0
+    is_asking_followup: bool = False
+    notes: list = field(default_factory=list)
+    filler_count: int = 0
+    responses: list = field(default_factory=list)
+    start_time: datetime = field(default_factory=datetime.now)
+    conversation_history: List[Dict] = field(default_factory=list)
+
+
+# ==============================
+#   QUESTION BANK SYSTEM
+# ==============================
+QUESTION_BANK = {
+    InterviewType.TECHNICAL: [
+        "Walk me through your technical background and most relevant experience.",
+        "Describe a complex technical problem you solved. What was your approach?",
+        "How do you ensure code quality and maintainability in your projects?",
+        "Tell me about a time you had to learn a new technology quickly.",
+        "How do you approach debugging difficult issues?",
+        "What's your experience with system design and scalability?",
+    ],
+    InterviewType.BEHAVIORAL: [
+        "Tell me about yourself and what brings you here today.",
+        "Describe a situation where you had to work with a difficult team member.",
+        "Give me an example of a time you failed. How did you handle it?",
+        "Tell me about your greatest professional achievement.",
+        "How do you prioritize tasks when everything seems urgent?",
+        "Describe a time you had to adapt to significant change.",
+    ],
+    InterviewType.LEADERSHIP: [
+        "Describe your leadership philosophy and style.",
+        "Tell me about a difficult decision you made as a leader.",
+        "How do you handle underperforming team members?",
+        "Give me an example of how you've built and motivated a team.",
+        "How do you balance being hands-on with delegating?",
+        "Describe a time you had to manage conflict within your team.",
+    ],
+    InterviewType.SALES: [
+        "Walk me through your sales experience and biggest wins.",
+        "Describe your approach to understanding customer needs.",
+        "Tell me about a deal you lost. What did you learn?",
+        "How do you handle rejection and maintain motivation?",
+        "What's your process for building relationships with clients?",
+        "Give me an example of how you've exceeded your sales targets.",
+    ],
+    InterviewType.CUSTOMER_SERVICE: [
+        "Tell me about your customer service experience.",
+        "Describe a time you dealt with an extremely difficult customer.",
+        "How do you handle stress during high-volume periods?",
+        "Give me an example of going above and beyond for a customer.",
+        "What does excellent customer service mean to you?",
+        "How do you handle a situation where you can't give the customer what they want?",
+    ],
+    InterviewType.GENERAL: [
+        "Tell me about yourself and your background.",
+        "What motivated you to apply for this position?",
+        "Describe a challenge you faced at work and how you handled it.",
+        "How do you handle feedback or criticism?",
+        "Where do you see yourself in the next 3-5 years?",
+    ],
+}
+
+
+def get_questions_for_config(config: InterviewConfig) -> List[str]:
+    """
+    Get appropriate questions based on interview configuration.
+    
+    Args:
+        config: Interview configuration object
+        
+    Returns:
+        List of curated questions
+    """
+    all_questions = QUESTION_BANK.get(config.interview_type, QUESTION_BANK[InterviewType.GENERAL])
+    
+    # Return requested number of questions (or all if fewer available)
+    return all_questions[:config.num_questions]
+
+
+# ==============================
+#     FUNCTION TOOLS
+# ==============================
+
+@function_tool(
+    name="flag_concern",
+    description="Call when candidate shows weakness, vagueness, or concerning attitude. Records red flag."
 )
+async def flag_concern(ctx: RunContext, concern: str):
+    """Flags a concern in the candidate's response"""
+    interview_ctx: InterviewContext = ctx.userdata
+    interview_ctx.notes.append({
+        "type": "concern",
+        "content": concern,
+        "timestamp": datetime.now().isoformat(),
+        "question_index": interview_ctx.question_index
+    })
+    logger.info(f"⚠️ Concern flagged: {concern}")
+    
+    return {"message": "Concern noted. Continue interview naturally."}
 
-logger = logging.getLogger(__name__)
+
+@function_tool(
+    name="note_strength",
+    description="Call when candidate provides exceptionally strong, articulate answer. Records positive note."
+)
+async def note_strength(ctx: RunContext, strength: str):
+    """Notes a strength in the candidate's response"""
+    interview_ctx: InterviewContext = ctx.userdata
+    interview_ctx.notes.append({
+        "type": "strength",
+        "content": strength,
+        "timestamp": datetime.now().isoformat(),
+        "question_index": interview_ctx.question_index
+    })
+    logger.info(f"💪 Strength noted: {strength}")
+
+    return {"message": "Strength noted. Continue interview naturally."}
 
 
-class InterviewerAssistant(Agent):
-    """Professional technical interviewer"""
-
-    def __init__(self) -> None:
-        super().__init__(
-            instructions=(
-                "You are a professional technical interviewer conducting a job interview. "
-                "Be warm, friendly, and professional. Ask clear questions about the candidate's "
-                "background, skills, and experience. Listen carefully and ask relevant follow-up "
-                "questions. Keep your responses concise and conversational - avoid long explanations."
-            )
+@function_tool(
+    name="generate_adaptive_followup",
+    description="Generate a smart follow-up question when answer is vague, incomplete, or particularly interesting. Only use if adaptive mode is enabled."
+)
+async def generate_adaptive_followup(
+    ctx: RunContext, 
+    reason: str,
+    focus_area: str
+):
+    """
+    Generates an adaptive follow-up question using AI.
+    
+    Args:
+        reason: Why a follow-up is needed (e.g., "answer was too vague")
+        focus_area: What to probe deeper on (e.g., "technical implementation details")
+    """
+    interview_ctx: InterviewContext = ctx.userdata
+    
+    if not interview_ctx.config.allow_adaptive_questions:
+        return {"message": "Adaptive questions disabled. Skip follow-up.", "question": None}
+    
+    interview_ctx.is_asking_followup = True
+    
+    # Get last response
+    last_response = interview_ctx.responses[-1] if interview_ctx.responses else ""
+    last_question = (
+        interview_ctx.core_questions[interview_ctx.question_index] 
+        if interview_ctx.question_index < len(interview_ctx.core_questions) 
+        else "the previous question"
+    )
+    
+    # Generate follow-up using LLM
+    try:
+        followup_prompt = (
+            f"You are generating a follow-up interview question.\n"
+            f"Original question: {last_question}\n"
+            f"Candidate's answer: {last_response}\n"
+            f"Reason for follow-up: {reason}\n"
+            f"Focus area: {focus_area}\n"
+            f"Interview type: {interview_ctx.config.interview_type.value}\n"
+            f"Interview mode: {interview_ctx.config.mode.value}\n\n"
+            f"Generate ONE concise, specific follow-up question that probes deeper into {focus_area}. "
+            f"The question should be natural and conversational. Return ONLY the question, nothing else."
         )
-        # transcript and metadata for post-interview analysis
-        self.transcript = []
-        self.metadata = {
-            "start_time": None,
-            "end_time": None,
-            "candidate_name": None,
+        
+        chat_ctx = ChatContext()
+        chat_ctx.append(role="user", text=followup_prompt)
+        
+        llm_instance = openai.LLM(
+            model="mistralai/mistral-7b-instruct:free",
+            api_key=os.getenv("OPENROUTER_API_KEY"),
+            base_url="https://openrouter.ai/api/v1",
+        )
+        
+        stream = llm_instance.chat(chat_ctx=chat_ctx)
+        followup_question = ""
+        async for chunk in stream:
+            followup_question += chunk.delta.content or ""
+        
+        followup_question = followup_question.strip()
+        interview_ctx.adaptive_questions.append(followup_question)
+        
+        logger.info(f"🎯 Generated adaptive follow-up: {followup_question}")
+        
+        return {
+            "message": "Follow-up generated. Ask it now before advancing to next question.",
+            "question": followup_question
         }
+        
+    except Exception as e:
+        logger.error(f"Error generating follow-up: {e}")
+        interview_ctx.is_asking_followup = False
+        return {"message": "Failed to generate follow-up. Continue to next question.", "question": None}
 
 
-async def entrypoint(ctx: agents.JobContext):
-    """Main agent entrypoint"""
+@function_tool(
+    name="complete_followup",
+    description="Call after receiving answer to an adaptive follow-up question. Resets follow-up state."
+)
+async def complete_followup(ctx: RunContext):
+    """Marks the follow-up as complete"""
+    interview_ctx: InterviewContext = ctx.userdata
+    interview_ctx.is_asking_followup = False
+    logger.info("✅ Follow-up completed")
+    return {"message": "Follow-up complete. Continue with main questions."}
+
+
+@function_tool(
+    name="advance_question",
+    description="Call IMMEDIATELY before asking the next core question. Increments question index."
+)
+async def advance_question(ctx: RunContext):
+    """Increments the question index"""
+    interview_ctx: InterviewContext = ctx.userdata
+    interview_ctx.question_index += 1
+    logger.info(f"➡️ Advanced to question {interview_ctx.question_index + 1}")
     
-    # Validate required environment variables
-    required_vars = {
-        "OPENROUTER_API_KEY": os.getenv("OPENROUTER_API_KEY"),
-        "LIVEKIT_URL": os.getenv("LIVEKIT_URL"),
-        "LIVEKIT_API_KEY": os.getenv("LIVEKIT_API_KEY"),
-        "LIVEKIT_API_SECRET": os.getenv("LIVEKIT_API_SECRET"),
+    if interview_ctx.question_index < len(interview_ctx.core_questions):
+        next_q = interview_ctx.core_questions[interview_ctx.question_index]
+        return {"message": f"State advanced. Next question: {next_q}"}
+    else:
+        return {"message": "All core questions completed. End interview."}
+
+
+@function_tool(
+    name="end_interview",
+    description="Call ONLY after all core questions answered. Triggers analysis and feedback."
+)
+async def end_interview(ctx: RunContext):
+    """Ends interview and generates feedback"""
+    interview_ctx: InterviewContext = ctx.userdata
+    
+    summary = _summarize_interview(interview_ctx)
+    ai_feedback = await _generate_feedback(summary, interview_ctx.config)
+    _save_results(interview_ctx, summary, ai_feedback)
+
+    await ctx.session.say(
+        "Thank you for completing the interview! Let me analyze your responses..."
+    )
+    await asyncio.sleep(1)
+    await ctx.session.say(
+        "Here's your personalized feedback based on our conversation:"
+    )
+    await ctx.session.say(ai_feedback)
+    
+    await asyncio.sleep(2)
+    await ctx.session.end()
+
+    return {"message": "Interview completed successfully."}
+
+
+# ==============================
+#       HELPER FUNCTIONS
+# ==============================
+def _summarize_interview(ctx: InterviewContext) -> dict:
+    """Create comprehensive interview summary"""
+    duration = (datetime.now() - ctx.start_time).total_seconds() / 60
+    return {
+        "candidate": ctx.candidate_name,
+        "interview_type": ctx.config.interview_type.value,
+        "interview_mode": ctx.config.mode.value,
+        "company": ctx.config.company_name,
+        "job_title": ctx.config.job_title,
+        "duration_min": round(duration, 2),
+        "core_questions_asked": ctx.core_questions[:ctx.question_index + 1],
+        "adaptive_questions_asked": ctx.adaptive_questions,
+        "total_questions": ctx.question_index + 1 + len(ctx.adaptive_questions),
+        "responses": ctx.responses,
+        "filler_count": ctx.filler_count,
+        "notes": ctx.notes,
+        "strengths_count": sum(1 for n in ctx.notes if n.get("type") == "strength"),
+        "concerns_count": sum(1 for n in ctx.notes if n.get("type") == "concern"),
     }
+
+
+async def _generate_feedback(summary: dict, config: InterviewConfig) -> str:
+    """Generate personalized feedback using AI"""
+    try:
+        feedback_prompt = (
+            f"You are an expert interview coach analyzing a {summary['interview_type']} interview "
+            f"for a {summary['job_title']} position at {summary['company']}.\n\n"
+            f"Provide detailed, actionable feedback in this structure:\n\n"
+            f"**STRENGTHS** (2-3 specific points)\n"
+            f"**AREAS FOR IMPROVEMENT** (2-3 specific points with examples)\n"
+            f"**COMMUNICATION ANALYSIS** (filler words, clarity, confidence)\n"
+            f"**OVERALL IMPRESSION** (hire recommendation: Strong Yes / Yes / Maybe / No)\n"
+            f"**NEXT STEPS** (1-2 actionable tips for improvement)\n\n"
+            f"Interview Data:\n{json.dumps(summary, indent=2)}"
+        )
+
+        chat_ctx = ChatContext()
+        chat_ctx.append(role="user", text=feedback_prompt)
+
+        llm_instance = openai.LLM(
+            model="mistralai/mistral-7b-instruct:free",
+            api_key=os.getenv("OPENROUTER_API_KEY"),
+            base_url="https://openrouter.ai/api/v1",
+        )
+        
+        stream = llm_instance.chat(chat_ctx=chat_ctx)
+        feedback_text = ""
+        async for chunk in stream:
+            feedback_text += chunk.delta.content or ""
+            
+        return feedback_text or "Feedback unavailable."
+    except Exception as e:
+        logger.error(f"Error generating feedback: {e}")
+        return "Something went wrong while generating feedback."
+
+
+def _save_results(ctx: InterviewContext, summary: dict, feedback: str):
+    """Save results to file (or database in production)"""
+    try:
+        # For production, replace with database storage
+        base_dir = "/tmp/interviews"
+        os.makedirs(base_dir, exist_ok=True)
+        
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = f"{ctx.candidate_name}_{ctx.config.interview_type.value}_{timestamp}.json"
+        file_path = os.path.join(base_dir, filename)
+
+        with open(file_path, "w", encoding="utf-8") as f:
+            json.dump({
+                "summary": summary,
+                "feedback": feedback,
+                "config": {
+                    "type": ctx.config.interview_type.value,
+                    "mode": ctx.config.mode.value,
+                    "adaptive_enabled": ctx.config.allow_adaptive_questions,
+                }
+            }, f, indent=2)
+
+        logger.info(f"💾 Results saved: {file_path}")
+    except Exception as e:
+        logger.error(f"Failed to save results: {e}")
+
+
+# ==============================
+#       AGENT CLASS
+# ==============================
+class InterviewerAgent(Agent):
+    """Main agent managing interview flow"""
     
-    missing = [k for k, v in required_vars.items() if not v]
-    if missing:
-        raise RuntimeError(f"Missing required environment variables: {', '.join(missing)}")
+    def __init__(self, interview_ctx: InterviewContext):
+        # Build the system prompt immediately since it's required
+        ctx = interview_ctx
+        config = ctx.config
+        
+        questions_list = "\n".join(
+            f"{i+1}. {q}" for i, q in enumerate(ctx.core_questions)
+        )
+        
+        mode_instructions = {
+            InterviewMode.FRIENDLY: "Be warm, encouraging, and supportive. Celebrate good answers enthusiastically.",
+            InterviewMode.STANDARD: "Be professional and balanced. Maintain neutral, polite tone.",
+            InterviewMode.CHALLENGING: "Be direct and probe deeply. Ask tough follow-ups when answers are weak."
+        }
+        
+        system_prompt = (
+            f"You are a {config.mode.value} professional interviewer conducting a {config.interview_type.value} interview "
+            f"for a {config.job_title} position at {config.company_name}.\n\n"
+            f"{mode_instructions[config.mode]}\n\n"
+            f"### CORE QUESTIONS ({len(ctx.core_questions)} required):\n{questions_list}\n\n"
+            f"### CONVERSATION PROTOCOL:\n"
+            f"Note: The greeting and first question have already been asked automatically.\n"
+            f"1. After the candidate responds to any question, call `note_strength` OR `flag_concern` to record observations\n"
+            f"2. If the answer is vague/weak/exceptional AND adaptive mode is enabled, call `generate_adaptive_followup` to probe deeper\n"
+            f"3. If you asked a follow-up, call `complete_followup` after receiving the answer\n"
+            f"4. After all notes/follow-ups are done, call `advance_question` then ask the next core question from the list\n"
+            f"5. After the candidate answers question #{len(ctx.core_questions)} (the final question), call `end_interview` immediately. Do NOT speak after calling end_interview.\n\n"
+            f"### ADAPTIVE QUESTIONS: {'ENABLED ✅' if config.allow_adaptive_questions else 'DISABLED ❌'}\n"
+            f"When enabled, generate 1 follow-up per core question if needed.\n\n"
+            f"Stay natural, conversational, and focused on candidate assessment."
+        )
+        
+        # Define tools list
+        tools_list = [
+            flag_concern,
+            note_strength,
+            advance_question,
+            end_interview,
+            generate_adaptive_followup,
+            complete_followup
+        ]
+        
+        # Pass instructions AND tools to parent Agent class
+        super().__init__(instructions=system_prompt, tools=tools_list)
+        self.interview_ctx = interview_ctx
+
+    async def on_user_speech_committed(self, message: ChatMessage):
+        """Track responses and analyze speech patterns"""
+        text = message.content
+        if not text.strip():
+            return
+        
+        self.interview_ctx.responses.append(text)
+        self.interview_ctx.conversation_history.append({
+            "role": "user",
+            "content": text,
+            "timestamp": datetime.now().isoformat()
+        })
+        
+        logger.info(f"📝 User: {text[:100]}...")
+
+        # Filler word analysis
+        fillers = ["um", "uh", "like", "you know", "sort of", "kind of"]
+        count = sum(text.lower().count(f) for f in fillers)
+        self.interview_ctx.filler_count += count
+        if count:
+            logger.info(f"📊 Fillers detected: {count} (Total: {self.interview_ctx.filler_count})")
+
+    async def on_enter(self):
+        """Initialize interview when agent enters"""
+        ctx = self.interview_ctx
+        
+        # Tools and instructions are already set in __init__
+        # Just perform the initial greeting and first question
+        
+        # 1. Greet the candidate
+        greeting = (
+            f"Hello {ctx.candidate_name}! Welcome to your {ctx.config.interview_type.value} interview "
+            f"for the {ctx.config.job_title} role at {ctx.config.company_name}. "
+            f"I'm excited to learn more about you today. Let's begin!"
+        )
+        await self.session.say(greeting, allow_interruptions=True)
+        
+        # 2. Set to first question (index 0)
+        ctx.question_index = 0
+        first_question = ctx.core_questions[0] if ctx.core_questions else "Tell me about yourself."
+        
+        # 3. Ask the first question
+        await self.session.say(first_question, allow_interruptions=True)
+        
+        logger.info(f"✅ Interview started: Asked question 1/{len(ctx.core_questions)}")
+
+
+# ==============================
+#       ENTRYPOINT
+# ==============================
+async def entrypoint(ctx: JobContext):
+    """Main worker entry point"""
     
-    logger.info("🚀 Starting AI Interviewer Agent...")
+    await ctx.connect(auto_subscribe=agents.AutoSubscribe.AUDIO_ONLY)
+    logger.info(f"✅ Connected to room: {ctx.room.name}")
+
+    participant = await ctx.wait_for_participant()
+    logger.info(f"👤 Participant: {participant.identity}")
+
+    # Parse interview configuration from room metadata or environment
+    room_metadata = json.loads(ctx.room.metadata or '{}')
     
-    # Configure OpenRouter LLM
+    config = InterviewConfig(
+        interview_type=InterviewType(
+            room_metadata.get('interview_type', os.getenv('INTERVIEW_TYPE', 'general'))
+        ),
+        mode=InterviewMode(
+            room_metadata.get('interview_mode', os.getenv('INTERVIEW_MODE', 'standard'))
+        ),
+        num_questions=int(room_metadata.get('num_questions', os.getenv('NUM_QUESTIONS', 5))),
+        allow_adaptive_questions=room_metadata.get('allow_adaptive', True),
+        company_name=room_metadata.get('company_name', os.getenv('COMPANY_NAME', 'Our Company')),
+        job_title=room_metadata.get('job_title', os.getenv('JOB_TITLE', 'this position')),
+        candidate_resume_summary=room_metadata.get('resume_summary'),
+    )
+    
+    interview_ctx = InterviewContext(
+        candidate_name=participant.identity or 'Candidate',
+        config=config,
+        core_questions=get_questions_for_config(config)
+    )
+
+    # Setup voice pipeline
     llm_instance = openai.LLM(
-        model="mistralai/mistral-7b-instruct:free",  # Your chosen model
+        model="mistralai/mistral-7b-instruct:free",
         api_key=os.getenv("OPENROUTER_API_KEY"),
         base_url="https://openrouter.ai/api/v1",
     )
-    
-    # Create agent session with LiveKit Cloud STT/TTS
+
     session = AgentSession(
-        # Use correct model identifiers for LiveKit Cloud
-        stt="deepgram/nova-2:en",  # ✅ Correct Deepgram model
+        #vad=silero.VAD.load(),
+        stt="deepgram/nova-2:en",
         llm=llm_instance,
-        tts="cartesia/sonic-2:79a125e8-cd45-4c13-8a67-188112f4dd22",  # ✅ Correct Cartesia model
+        tts="cartesia/sonic-2:79a125e8-cd45-4c13-8a67-188112f4dd22",
+        userdata=interview_ctx,
     )
-    # flag to indicate the session is active; handlers should check this to avoid
-    # calling into LiveKit internals after we've begun shutdown
-    session_active = True
-    
-    # Start the session
-    await session.start(
-        room=ctx.room,
-        agent=InterviewerAssistant(),
-    )
-    
-    # Attach a minimal data message handler so the frontend can send instructions/personality
+
+    agent = InterviewerAgent(interview_ctx=interview_ctx)
+
+    await session.start(agent=agent, room=ctx.room)
+    logger.info("🎙️ Interview session started")
+
+    # Publish agent presence
     try:
-        async def _on_data(msg):
-            try:
-                # ignore incoming data if we're shutting down
-                if not session_active:
-                    return
-                raw = None
-                if hasattr(msg, 'data'):
-                    raw = msg.data
-                elif hasattr(msg, 'payload'):
-                    raw = msg.payload
-
-                if isinstance(raw, (bytes, bytearray)):
-                    raw = raw.decode('utf-8', errors='ignore')
-                if not raw:
-                    return
-
-                import json
-                try:
-                    obj = json.loads(raw)
-                except Exception:
-                    return
-
-                if obj.get('type') == 'agent.instruction':
-                    # Prefer a direct 'instruction' field, fall back to 'text'
-                    new_instr = obj.get('instruction') or obj.get('text') or ''
-                    if not new_instr:
-                        # build a friendly instruction if descriptive fields provided
-                        name = obj.get('name', 'Candidate')
-                        topic = obj.get('topic', '')
-                        personality = obj.get('personality', '')
-                        new_instr = f"You are an interviewer. Personality: {personality}. Topic: {topic}. Conduct a professional interview for {name}."
-
-                    try:
-                        if hasattr(session.agent, 'set_instructions'):
-                            session.agent.set_instructions(new_instr)
-                        else:
-                            session.agent.instructions = new_instr
-                        logger.info('Agent: updated instructions from data message')
-                    except Exception:
-                        logger.exception('Agent: failed to apply instructions from data message')
-            except Exception:
-                logger.exception('Agent: unexpected error in data handler')
-
-        # attach depending on room API surface
-        try:
-            if hasattr(ctx.room, 'on'):
-                ctx.room.on('data_received', _on_data)
-            elif hasattr(ctx.room, 'on_data'):
-                ctx.room.on_data(_on_data)
-        except Exception:
-            # non-fatal if attach fails
-            logger.debug('Agent: could not attach data handler', exc_info=True)
-    except Exception:
-        # be tolerant; the agent will continue without live instruction updates
-        logger.debug('Agent: data handler setup skipped', exc_info=True)
-    
-    # safe room name access
-    room_name = getattr(ctx.room, "name", None) or getattr(ctx.room, "room_name", None) if hasattr(ctx, 'room') else None
-    logger.info(f"✅ Agent joined room: {room_name}")
-
-    # mark start time
-    try:
-        session.agent.metadata['start_time'] = datetime.utcnow().isoformat()
-    except Exception:
-        logger.debug('Agent: could not set start_time on metadata', exc_info=True)
-
-    # Defensive event listeners to capture transcripts if the session exposes events
-    try:
-        # helper to append to transcript safely
-        def _append_transcript(speaker, text, confidence=None):
-            try:
-                entry = {
-                    'speaker': speaker,
-                    'text': text,
-                    'ts': datetime.utcnow().isoformat(),
-                }
-                if confidence is not None:
-                    entry['confidence'] = float(confidence)
-                session.agent.transcript.append(entry)
-            except Exception:
-                logger.exception('Agent: failed to append transcript entry')
-
-        # Try common event names; many SDKs provide speech-committed hooks
-        if hasattr(session, 'on'):
-            # guard: some implementations use string event names
-            try:
-                async def _on_user_speech(event):
-                    try:
-                        # guard against running after close
-                        if not session_active:
-                            return
-                        # event shapes vary between providers
-                        text = getattr(event, 'text', None)
-                        confidence = None
-                        if not text and hasattr(event, 'alternatives'):
-                            alt = event.alternatives[0]
-                            text = getattr(alt, 'text', None) or getattr(alt, 'transcript', None)
-                            confidence = getattr(alt, 'confidence', None)
-                        if text:
-                            _append_transcript('candidate', text, confidence)
-                    except Exception:
-                        logger.exception('Agent: error in _on_user_speech')
-
-                async def _on_agent_speech(event):
-                    try:
-                        # guard against running after close
-                        if not session_active:
-                            return
-                        text = getattr(event, 'text', None) or getattr(event, 'transcript', None)
-                        if text:
-                            _append_transcript('interviewer', text)
-                    except Exception:
-                        logger.exception('Agent: error in _on_agent_speech')
-
-                session.on('user_speech_committed', _on_user_speech)
-                session.on('agent_speech_committed', _on_agent_speech)
-            except Exception:
-                logger.debug('Agent: session.on handlers not supported', exc_info=True)
-        else:
-            logger.debug('Agent: session.on not found; transcript events not attached')
-    except Exception:
-        logger.exception('Agent: failed to attach transcript event handlers')
-    
-    # Generate initial greeting
-    try:
-        logger.info("💬 Generating greeting...")
-        await session.generate_reply(
-            instructions=(
-                "Greet the candidate warmly and professionally. "
-                "Ask them to introduce themselves briefly."
-            )
-        )
-        logger.info("✅ Greeting generated successfully")
+        payload = json.dumps({
+            "type": "agent.presence",
+            "message": "agent_online",
+            "config": {
+                "type": config.interview_type.value,
+                "mode": config.mode.value,
+                "questions": len(interview_ctx.core_questions)
+            }
+        }).encode()
+        await ctx.room.local_participant.publish_data(payload, topic="agent-messages")
     except Exception as e:
-        logger.error(f"❌ Failed to generate greeting: {e}")
-    
-    # Keep agent running until cancelled
+        logger.warning(f"Presence publish failed: {e}")
+
+    # Keep alive
     try:
-        # Wait for cancellation
-        while True:
-            await asyncio.sleep(1)
+        await asyncio.Event().wait()
     except asyncio.CancelledError:
-        logger.info("🛑 Agent shutting down...")
-    finally:
-        # Cleanup
-        try:
-            # mark end time
-            try:
-                session.agent.metadata['end_time'] = datetime.utcnow().isoformat()
-            except Exception:
-                pass
-
-            # perform a lightweight post-interview analysis and save results
-            try:
-                transcript = []
-                try:
-                    transcript = list(session.agent.transcript)
-                except Exception:
-                    transcript = []
-
-                # simple heuristics
-                total_words = 0
-                total_entries = 0
-                filler_count = 0
-                hesitations = 0
-                for e in transcript:
-                    t = e.get('text', '') if isinstance(e, dict) else str(e)
-                    words = [w for w in t.split() if w]
-                    total_words += len(words)
-                    total_entries += 1
-                    # crude filler detection
-                    filler_count += sum(1 for f in ['um', 'uh', 'like', 'you know'] if f in t.lower())
-                    hesitations += t.lower().count('...')
-
-                avg_words = total_words / total_entries if total_entries else 0
-                clarity = round(min(100, 50 + avg_words), 1)
-                confidence = round(max(0, 100 - (filler_count * 5 + hesitations * 3)), 1)
-
-                analysis = {
-                    'summary': 'Auto-generated summary',
-                    'metrics': {
-                        'clarity': clarity,
-                        'confidence': confidence,
-                        'filler_words': filler_count,
-                        'hesitations': hesitations,
-                        'total_entries': total_entries,
-                        'total_words': total_words,
-                    },
-                    'transcript_snippet': transcript[-5:] if transcript else [],
-                    'metadata': getattr(session.agent, 'metadata', {}),
-                }
-
-                # Use the LLM to generate feedback if available
-                try:
-                    prompt = (
-                        "You are an assistant that reviews interview transcripts.\n"
-                        "Provide a short feedback paragraph about the candidate's communication, pacing, confidence, and 2-3 actionable tips.\n\n"
-                        "Transcript snippet:\n" + '\n'.join([f"{e.get('speaker')}: {e.get('text')}" for e in analysis['transcript_snippet']])
-                    )
-                    reply = None
-                    try:
-                        reply = await session.llm.complete(prompt) if hasattr(session, 'llm') and hasattr(session.llm, 'complete') else None
-                    except Exception:
-                        # try older generate API
-                        try:
-                            reply = await session.generate_reply(instructions=prompt)
-                        except Exception:
-                            reply = None
-
-                    feedback_text = None
-                    try:
-                        if isinstance(reply, str):
-                            feedback_text = reply
-                        elif reply is not None:
-                            feedback_text = getattr(reply, 'text', None) or getattr(reply, 'message', None) or str(reply)
-                    except Exception:
-                        feedback_text = None
-
-                    analysis['ai_feedback'] = feedback_text or 'AI feedback not available.'
-                except Exception:
-                    analysis['ai_feedback'] = 'AI feedback generation failed.'
-
-                # save to disk
-                try:
-                    out_dir = os.path.join(os.getcwd(), 'backend', 'interviews')
-                    os.makedirs(out_dir, exist_ok=True)
-                    fname = f"interview_{datetime.utcnow().strftime('%Y%m%dT%H%M%SZ')}.json"
-                    full_path = os.path.join(out_dir, fname)
-                    with open(full_path, 'w', encoding='utf-8') as fh:
-                        json.dump({'analysis': analysis, 'transcript': transcript}, fh, indent=2, ensure_ascii=False)
-                    logger.info('Agent: interview analysis saved to %s', full_path)
-                    # attempt to POST the analysis to the frontend upload endpoint
-                    try:
-                        frontend_base = os.getenv('FRONTEND_BASE_URL', 'http://localhost:3000')
-                        upload_url = frontend_base.rstrip('/') + '/api/interviews/upload'
-                        agent_secret = os.getenv('AGENT_UPLOAD_SECRET')
-                        if not agent_secret:
-                            logger.warning('Agent: AGENT_UPLOAD_SECRET not set, skipping secure upload')
-                        else:
-                            import requests, hmac, hashlib
-                            body = {'interviewId': fname.replace('.json',''), 'analysis': analysis, 'transcript': transcript}
-                            raw = json.dumps(body)
-                            sig = hmac.new(agent_secret.encode('utf-8'), raw.encode('utf-8'), hashlib.sha256).hexdigest()
-                            headers = {'x-agent-signature': sig, 'Content-Type': 'application/json'}
-                            resp = requests.post(upload_url, data=raw, headers=headers, timeout=10)
-                            if resp.status_code >= 200 and resp.status_code < 300:
-                                logger.info('Agent: uploaded analysis to %s', upload_url)
-                            else:
-                                logger.warning('Agent: upload endpoint returned %s: %s', resp.status_code, resp.text[:200])
-                    except Exception:
-                        logger.debug('Agent: could not upload analysis to frontend', exc_info=True)
-                except Exception:
-                    logger.exception('Agent: failed to save interview analysis')
-
-                # publish a short summary back to the room as a data message
-                try:
-                    summary_payload = json.dumps({'type': 'agent.post_interview_summary', 'metrics': analysis['metrics'], 'ai_feedback': (analysis.get('ai_feedback') or '')[:500]})
-                    async def _maybe_call(fn, *a, **kw):
-                        try:
-                            res = fn(*a, **kw)
-                            if hasattr(res, '__await__'):
-                                await res
-                        except Exception:
-                            pass
-
-                    published = False
-                    if hasattr(ctx.room, 'send_data'):
-                        await _maybe_call(ctx.room.send_data, summary_payload)
-                        published = True
-                    elif hasattr(ctx.room, 'local_participant') and hasattr(ctx.room.local_participant, 'publishData'):
-                        await _maybe_call(ctx.room.local_participant.publishData, summary_payload)
-                        published = True
-                    elif hasattr(ctx.room, 'local_participant') and hasattr(ctx.room.local_participant, 'publishData'):
-                        await _maybe_call(ctx.room.local_participant.publishData, summary_payload)
-                        published = True
-                    if published:
-                        logger.info('Agent: published post-interview summary to room')
-                except Exception:
-                    logger.exception('Agent: failed to publish post-interview summary')
-            except Exception:
-                logger.exception('Agent: post-interview analysis failed')
-
-            # mark as inactive so handlers won't resume or process events
-            try:
-                session_active = False
-            except Exception:
-                # swallow; best-effort
-                pass
-
-            # Attempt to detach any listeners we registered to avoid callbacks
-            try:
-                if hasattr(session, 'off'):
-                    try:
-                        session.off('user_speech_committed', _on_user_speech)
-                    except Exception:
-                        pass
-                    try:
-                        session.off('agent_speech_committed', _on_agent_speech)
-                    except Exception:
-                        pass
-            except Exception:
-                pass
-
-            try:
-                if hasattr(ctx.room, 'off'):
-                    try:
-                        ctx.room.off('data_received', _on_data)
-                    except Exception:
-                        pass
-                elif hasattr(ctx.room, 'remove_listener'):
-                    try:
-                        ctx.room.remove_listener('data_received', _on_data)
-                    except Exception:
-                        pass
-            except Exception:
-                pass
-
-            # finally, close the session if possible
-            if hasattr(session, 'aclose'):
-                try:
-                    await session.aclose()
-                except Exception:
-                    pass
-        except Exception:
-            pass
+        logger.info("Session ended")
 
 
 if __name__ == "__main__":
-    logger.info("🎯 LiveKit AI Interviewer Agent")
-    agents.cli.run_app(WorkerOptions(entrypoint_fnc=entrypoint))
-
+    cli.run_app(WorkerOptions(entrypoint_fnc=entrypoint))

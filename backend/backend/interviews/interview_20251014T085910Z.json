@@ -1,0 +1,52 @@
+{
+  "score": {
+    "overall_score": 80.0,
+    "response_rate": 100.0,
+    "fluency_score": 100,
+    "concerns_count": 0,
+    "strengths_count": 0,
+    "filler_count": 0,
+    "total_words": 0,
+    "duration_mins": 0.4
+  },
+  "concerns": [],
+  "strengths": [],
+  "transcript": [
+    {
+      "speaker": "interviewer",
+      "text": "Hello! I'm your AI interviewer today. Let's start with a brief introduction. Tell me about yourself and your background.",
+      "timestamp": "2025-10-14T08:58:56.191611"
+    },
+    {
+      "speaker": "interviewer",
+      "text": "Tell me about a recent project you're proud of and your specific contributions.",
+      "timestamp": "2025-10-14T08:58:56.820919"
+    },
+    {
+      "speaker": "interviewer",
+      "text": "Walk me through how you approach debugging a complex production issue.",
+      "timestamp": "2025-10-14T08:59:00.238377"
+    },
+    {
+      "speaker": "interviewer",
+      "text": "Describe a technical decision you made recently. What factors did you consider?",
+      "timestamp": "2025-10-14T08:59:03.605180"
+    },
+    {
+      "speaker": "interviewer",
+      "text": "What are your core technical strengths and areas you're actively improving?",
+      "timestamp": "2025-10-14T08:59:07.012677"
+    },
+    {
+      "speaker": "interviewer",
+      "text": "Thank you for your time today. We'll be in touch soon with feedback.",
+      "timestamp": "2025-10-14T08:59:10.391451"
+    }
+  ],
+  "ai_feedback": "Feedback generation unavailable",
+  "personality": "balanced",
+  "metadata": {
+    "start_time": "2025-10-14T08:58:44.051252",
+    "end_time": "2025-10-14T08:59:10.743662"
+  }
+}

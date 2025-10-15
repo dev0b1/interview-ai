@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { getHistory, deleteInterview, clearHistory, InterviewRecord } from "../../lib/history";
+import { getHistory, deleteInterview, clearHistory, InterviewRecord, getPendingUploads } from "../../lib/history";
 import ClientFormattedDate from "../../components/ClientFormattedDate";
 import { useAuth } from "../../lib/useAuth";
 
@@ -9,8 +9,49 @@ export default function HistoryPage() {
   // enforce auth
   useAuth();
   const [list, setList] = React.useState<InterviewRecord[]>([]);
+  const [pending, setPending] = React.useState<Array<{ id: string; ts: number }>>([]);
+  const [remoteInfo, setRemoteInfo] = React.useState<Record<string, { audioUrl?: string }>>({});
 
   React.useEffect(() => setList(getHistory()), []);
+
+  // fetch server-side metadata for saved interviews (audio URL, analysis)
+  const { session } = useAuth();
+  React.useEffect(() => {
+    let mounted = true;
+    async function loadRemote() {
+      const items = getHistory();
+      const map: Record<string, { audioUrl?: string }> = {};
+      await Promise.all(items.map(async (it) => {
+        try {
+          const headers: Record<string,string> = { 'Content-Type': 'application/json' };
+          if (session?.access_token) headers['Authorization'] = `Bearer ${session.access_token}`;
+          const res = await fetch('/api/interviews/get', { method: 'POST', body: JSON.stringify({ id: it.id }), headers });
+          if (!res.ok) return;
+          const json = await res.json();
+          const data = json.data || {};
+          const audio = data.audio_signed_url || null;
+          if (audio) map[it.id] = { audioUrl: audio };
+        } catch (e) {
+          // ignore
+        }
+      }));
+      if (mounted) setRemoteInfo(map);
+    }
+    void loadRemote();
+    return () => { mounted = false; };
+  }, [session]);
+
+  React.useEffect(() => {
+    let mounted = true;
+    const load = async () => {
+      const p = await getPendingUploads();
+      if (mounted) setPending(p);
+    };
+    load();
+    const id = window.setInterval(load, 5000);
+    return () => { mounted = false; clearInterval(id); };
+  }, []);
+  const pendingIds = React.useMemo(() => new Set(pending.map((p) => p.id)), [pending]);
 
   function handleDelete(id: string) {
     deleteInterview(id);
@@ -44,6 +85,25 @@ export default function HistoryPage() {
       </div>
 
       {list.length ? (
+        <>
+        <div className="mb-4">
+          {pending.length > 0 ? (
+            <div className="mb-3">
+              <div className="font-medium mb-1">Uploading</div>
+              <ul className="space-y-2">
+                {pending.map((p) => (
+                  <li key={p.id} className="flex items-center justify-between p-2 border rounded bg-yellow-50">
+                    <div>
+                      <div className="font-medium">Pending upload</div>
+                      <div className="text-xs text-gray-500">{new Date(p.ts).toLocaleString()}</div>
+                    </div>
+                    <div className="text-sm text-gray-700">Uploading…</div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+        </div>
         <ul className="space-y-3">
           {list.map((r) => (
             <li key={r.id} className="flex items-center justify-between p-3 border rounded">
@@ -52,13 +112,17 @@ export default function HistoryPage() {
                 <div className="text-sm text-gray-500"><ClientFormattedDate iso={r.date} /></div>
               </div>
               <div className="flex items-center gap-3">
-                <div className="text-sm text-gray-700">{r.score ? `${r.score}/100` : "—"}</div>
-                <button onClick={() => window.location.href = `/interviews/${r.id}`} className="px-2 py-1 text-sm border rounded">View</button>
+                <div className="text-sm text-gray-700">{r.score ? `${r.score}/100` : pendingIds.has(r.id) ? 'Uploading…' : '—'}</div>
+                {remoteInfo[r.id]?.audioUrl ? (
+                  <a href={remoteInfo[r.id].audioUrl} target="_blank" rel="noreferrer" className="px-2 py-1 text-sm border rounded text-sky-600">Recording</a>
+                ) : null}
+                <button onClick={() => window.location.href = `/interviews/${r.id}`} disabled={pendingIds.has(r.id)} className="px-2 py-1 text-sm border rounded {pendingIds.has(r.id) ? 'opacity-50 pointer-events-none' : ''}">View</button>
                 <button onClick={() => handleDelete(r.id)} className="px-2 py-1 text-sm border rounded">Delete</button>
               </div>
             </li>
           ))}
         </ul>
+        </>
       ) : (
         <div className="text-sm text-gray-500">No saved interviews.</div>
       )}

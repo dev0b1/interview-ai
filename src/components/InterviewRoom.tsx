@@ -1,3 +1,14 @@
+/**
+ * IMPROVED InterviewRoom Component
+ * Key improvements:
+ * 1. Use LiveKit's built-in transcript features
+ * 2. Leverage @livekit/components-react properly
+ * 3. Remove duplicate MediaRecorder (LiveKit already records)
+ * 4. Better data message handling
+ * 5. Proper TypeScript types
+ * 6. Cleaner state management
+ */
+
 "use client";
 
 import React from "react";
@@ -7,735 +18,841 @@ import {
   useLocalParticipant,
   useRemoteParticipants,
   RoomAudioRenderer,
+  useDataChannel,
+  useTracks,
+  ConnectionState,
 } from "@livekit/components-react";
+import { Track, RoomEvent, DataPacket_Kind } from "livekit-client";
+import type { Room, RemoteParticipant } from "livekit-client";
 import TranscriptPanel, { Entry } from "./TranscriptPanel";
-import { createClient as createSupabaseClient } from '@supabase/supabase-js';
+import { saveInterview } from "../lib/history";
 import SummaryModal from "./SummaryModal";
 import { useAuth } from "../lib/useAuth";
-import { useRouter } from 'next/navigation';
+import { useRouter } from "next/navigation";
 
-type Props = {
+// ============================================================================
+// TYPES
+// ============================================================================
+
+interface InterviewRoomProps {
   name: string;
   topic?: string;
   personality?: string;
   autoJoin?: boolean;
   onLeave?: () => void;
-};
+}
 
-// Minimal local types to avoid using `any` across this file and satisfy lint rules.
-type TrackLike = { track?: { enable?: (b: boolean) => void } };
-type LocalParticipantLike = {
-  setMicrophoneEnabled?: (b: boolean) => Promise<void> | void;
-  publishData?: (data: string, opts?: Record<string, unknown>) => void;
-  audioTracks?: TrackLike[];
-  identity?: string;
-};
-type LKRoomLike = {
-  localParticipant?: LocalParticipantLike & Record<string, unknown>;
-  connectionState?: string;
-  state?: string;
-  disconnect?: () => void;
-  on?: (event: string, handler: (...args: unknown[]) => void) => void;
-  off?: (event: string, handler: (...args: unknown[]) => void) => void;
-};
-// RemoteParticipantLike removed - not used in this file
+interface AgentDataMessage {
+  type: string;
+  [key: string]: unknown;
+}
 
-function ParticipantsPanel({ onLeave }: { onLeave?: () => void }) {
-  const localHook = useLocalParticipant();
-  const remotes = useRemoteParticipants();
-  // useRoomContext returns the room instance directly in this version
-  const room = useRoomContext() as unknown as LKRoomLike | null;
-  const [muted, setMuted] = React.useState(false);
+interface InterviewSummary {
+  score: number;
+  tone: string;
+  pacing: string;
+  notes: string;
+  metrics?: {
+    clarity?: number;
+    confidence?: number;
+    filler_words?: number;
+  };
+  ai_feedback?: string;
+}
 
-  const toggleMute = async () => {
+// ============================================================================
+// HOOK: Use LiveKit's DataChannel (simpler than manual handlers)
+// ============================================================================
+
+function useAgentMessages() {
+  const [greeting, setGreeting] = React.useState<string | null>(null);
+  const [summary, setSummary] = React.useState<InterviewSummary | null>(null);
+  const [behaviorFlags, setBehaviorFlags] = React.useState<string[]>([]);
+  const [rawMessages, setRawMessages] = React.useState<any[]>([]);
+
+  // LiveKit provides this hook to handle data messages
+  // Agent may publish on different topics; listen to both common ones used by agent.py
+  const { message: msgAgent } = useDataChannel("agent-messages");
+  const { message: msgInterview } = useDataChannel("interview_results");
+
+  React.useEffect(() => {
+    const process = (messageVar: any) => {
+      if (!messageVar) return;
       try {
-        // Try the most common API: setMicrophoneEnabled on localParticipant
-        if (room?.localParticipant && typeof room.localParticipant.setMicrophoneEnabled === "function") {
-          await room.localParticipant.setMicrophoneEnabled(!muted);
-          setMuted((m) => !m);
-          return;
-        }
-        // Fallback: try to enable/disable tracks directly
-        const tracks = (room?.localParticipant?.audioTracks ?? []) as TrackLike[];
-        tracks.forEach((t) => t.track?.enable ? t.track.enable(!muted) : null);
-        setMuted((m) => !m);
-      } catch {
-        console.error("mute toggle failed");
-      }
-  };
+        const text = new TextDecoder().decode(messageVar.payload);
+        const data = JSON.parse(text) as AgentDataMessage | any;
+        setRawMessages((m) => [{ topic: messageVar.topic, data }, ...m].slice(0, 20));
 
-  const leave = async () => {
+        // Normalize some common event shapes the backend uses
+        const type = data?.type || data?.event || null;
+
+        switch (type) {
+          case "agent.greeting":
+            setGreeting(data.text as string || data.message as string);
+            break;
+
+          case "interview_complete":
+          case "agent.interview_complete":
+            console.log("Interview complete:", data.results || data);
+            // if the payload contains summary/metrics attach to summary
+            if (data.results && data.results.score) {
+              setSummary({
+                score: data.results.score.overall_score || 0,
+                tone: data.results.personality || "",
+                pacing: "",
+                notes: data.results.ai_feedback || "",
+                metrics: {},
+                ai_feedback: data.results.ai_feedback || "",
+              });
+            }
+            break;
+
+          case "agent.behavior_flag":
+            setBehaviorFlags((prev) => [...prev, ...(data.issues as string[] || [])]);
+            break;
+
+          case "agent.post_interview_summary":
+            setSummary({
+              score: (data.metrics as { clarity?: number })?.clarity || 0,
+              tone: "Professional",
+              pacing: "Good",
+              notes: (data.ai_feedback as string) || "",
+              metrics: data.metrics as InterviewSummary["metrics"],
+              ai_feedback: (data.ai_feedback as string),
+            });
+            break;
+        }
+      } catch (err) {
+        console.warn("Failed to parse agent message:", err);
+      }
+    };
+
+    process(msgAgent);
+    process(msgInterview);
+  }, [msgAgent, msgInterview]);
+
+  return { greeting, summary, behaviorFlags, setGreeting };
+}
+
+
+// ============================================================================
+// COMPONENT: DebugPanel - small in-room debug UI to inspect participants/tracks/data
+// ============================================================================
+
+function DebugPanel() {
+  const room = useRoomContext();
+  const remotes = useRemoteParticipants();
+  const [events, setEvents] = React.useState<string[]>([]);
+
+  React.useEffect(() => {
+    if (!room) return;
+
+    const log = (msg: string) => setEvents((s) => [msg, ...s].slice(0, 50));
+
+    const onParticipant = (p: any) => log(`participant: ${p.identity} connected`);
+    const offParticipant = (p: any) => log(`participant: ${p.identity} disconnected`);
+    const onData = (pkt: any) => {
+      try {
+        const text = new TextDecoder().decode(pkt.data);
+        log(`data[${pkt.topic || 'unknown'}]: ${text.substring(0,120)}`);
+      } catch (e) {
+        log(`data: <binary>`);
+      }
+    };
+
     try {
-      // stop local recorder if running
-        try {
-        const win = window as unknown as { __localRecorder?: MediaRecorder };
-        const recorder = win.__localRecorder;
-        if (recorder && recorder.state !== 'inactive') {
-          recorder.stop();
-        }
-      } catch {
-        // ignore
-      }
-
-      if (room && typeof room.disconnect === "function") {
-        await room.disconnect();
-      }
-      try { onLeave?.(); } catch (err) { console.error('onLeave callback failed', err); }
-    } catch (err) {
-      console.error("leave failed", err);
+      room.on(RoomEvent.ParticipantConnected as never, onParticipant as never);
+      room.on(RoomEvent.ParticipantDisconnected as never, offParticipant as never);
+      room.on(RoomEvent.DataReceived as never, onData as never);
+    } catch (e) {
+      // ignore
     }
-  };
 
-  // recording helpers (attach recorder to window for debug)
-  // recording helpers moved to parent InterviewRoom where refs/state are available
+    return () => {
+      try {
+        room.off(RoomEvent.ParticipantConnected as never, onParticipant as never);
+        room.off(RoomEvent.ParticipantDisconnected as never, offParticipant as never);
+        room.off(RoomEvent.DataReceived as never, onData as never);
+      } catch (e) {}
+    };
+  }, [room]);
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center">{(localHook as unknown as { localParticipant?: { identity?: string } })?.localParticipant?.identity?.[0] ?? "U"}</div>
-            <div>
-              <div className="font-semibold">You</div>
-              <div className="text-sm text-gray-500">{(localHook as unknown as { localParticipant?: { identity?: string } })?.localParticipant?.identity ?? "local"}</div>
-            </div>
-          </div>
-        <div className="flex items-center gap-2">
-          <button onClick={toggleMute} className="px-3 py-1 bg-gray-100 rounded-md">
-            {muted ? "Unmute" : "Mute"}
-          </button>
-          <button onClick={leave} className="px-3 py-1 bg-red-500 text-white rounded-md">
-            Leave
-          </button>
-        </div>
-      </div>
-
-      <div className="space-y-3">
-        {remotes.map((p) => (
-          <div key={p.sid} className="flex items-center gap-3 p-2 border rounded">
-            <div className="w-8 h-8 rounded-full bg-gray-300 flex items-center justify-center">{p?.identity?.[0] ?? "A"}</div>
-            <div>
-              <div className="font-medium">{p?.identity ?? "remote"}</div>
-              <div className="text-sm text-gray-500">Remote participant</div>
-            </div>
-          </div>
+    <div className="mt-4 p-3 border rounded bg-gray-50 text-sm">
+      <div className="font-medium mb-2">Debug</div>
+      <div className="mb-2">Local: {room?.localParticipant?.identity || 'unknown'}</div>
+      <div className="mb-2">Remotes: {remotes.map(r => r.identity).join(', ') || 'none'}</div>
+      <div className="max-h-40 overflow-auto bg-white p-2 border rounded">
+        {events.length === 0 ? <div className="text-gray-400">No recent events</div> : events.map((e, i) => (
+          <div key={i} className="text-xs">{e}</div>
         ))}
       </div>
     </div>
   );
 }
 
-function RoomInstructionPublisher({ name, topic, personality }: { name: string; topic?: string; personality?: string }) {
-  // This component must be rendered inside LiveKitRoom so hooks are available
-  const room = useRoomContext() as unknown as LKRoomLike | null;
+
+// ============================================================================
+// HOOK: LiveKit Transcript (built-in, no need for manual tracking)
+// ============================================================================
+
+function useInterviewTranscript() {
+  const [entries, setEntries] = React.useState<Entry[]>([]);
+  const room = useRoomContext();
 
   React.useEffect(() => {
     if (!room) return;
 
-    const payload = {
-      type: 'agent.instruction',
-      name: name || 'Candidate',
-      topic: topic || '',
-      personality: personality || 'Professional & Calm',
+    // LiveKit emits transcription events
+    const handleTranscription = (
+      transcription: any,
+      participant?: RemoteParticipant,
+      publication?: unknown
+    ) => {
+      // transcription may come as a string or an object depending on LiveKit version/provider
+      let text = '';
+      if (!transcription) text = '';
+      else if (typeof transcription === 'string') text = transcription;
+      else if (typeof transcription === 'object') {
+        // common shapes: { text }, { transcript }, { segments: [...] }
+        if (typeof (transcription as any).text === 'string') text = (transcription as any).text;
+        else if (typeof (transcription as any).transcript === 'string') text = (transcription as any).transcript;
+        else if (Array.isArray((transcription as any).segments)) {
+          // join segments if present
+          try {
+            text = (transcription as any).segments.map((s: any) => s.text || s.content || '').join(' ');
+          } catch (e) {
+            text = String(transcription);
+          }
+        } else {
+          text = String(transcription);
+        }
+      } else {
+        text = String(transcription);
+      }
+
+      const who = participant ? 'AI' : 'User';
+      if (!text) return;
+      setEntries((prev) => [
+        ...prev,
+        {
+          who,
+          text,
+          ts: Date.now(),
+        },
+      ]);
     };
 
-    let cancelled = false;
+    // Some LiveKit versions use different event names
+    room.on(RoomEvent.TranscriptionReceived as never, handleTranscription as never);
+    
+    return () => {
+      room.off(RoomEvent.TranscriptionReceived as never, handleTranscription as never);
+    };
+  }, [room]);
 
-    const delay = (ms: number) => new Promise((res) => setTimeout(res, ms));
+  return entries;
+}
 
-    async function publishWithRetry() {
-      const maxAttempts = 12;
-      const baseBackoff = 300; // ms
-      for (let attempt = 1; attempt <= maxAttempts && !cancelled; attempt++) {
-        try {
-          // only attempt publish when the room reports connected
-          const state = room?.connectionState ?? room?.state ?? null;
-          if (state === 'connected' && room?.localParticipant && typeof room.localParticipant.publishData === 'function') {
-            // small extra delay after connection to allow PC manager to be ready
-            if (attempt === 1) await delay(150);
-            room.localParticipant.publishData(JSON.stringify(payload), { reliability: true });
-            // success
-            console.log('RoomInstructionPublisher: instruction published');
+// ============================================================================
+// COMPONENT: Interview Controls (Mute, Leave, etc.)
+// ============================================================================
+
+function InterviewControls({
+  onEndInterview,
+  onLeave,
+}: {
+  onEndInterview: () => void;
+  onLeave: () => void;
+}) {
+  const { localParticipant } = useLocalParticipant();
+  const [isMuted, setIsMuted] = React.useState(false);
+  const room = useRoomContext();
+
+  const toggleMute = async () => {
+    if (!localParticipant) return;
+    
+    try {
+      await localParticipant.setMicrophoneEnabled(!isMuted);
+      setIsMuted(!isMuted);
+    } catch (err) {
+      console.error("Failed to toggle mute:", err);
+    }
+  };
+
+  const handleLeave = async () => {
+    try {
+      await room?.disconnect();
+      onLeave();
+    } catch (err) {
+      console.error("Failed to leave:", err);
+    }
+  };
+
+  return (
+    <div className="flex gap-2 mt-4">
+      <button
+        onClick={toggleMute}
+        className="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-md transition"
+      >
+        {isMuted ? "🔇 Unmute" : "🎤 Mute"}
+      </button>
+      
+      <button
+        onClick={onEndInterview}
+        className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-md transition"
+      >
+        End Interview
+      </button>
+      
+      <button
+        onClick={handleLeave}
+        className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-md transition"
+      >
+        Leave Room
+      </button>
+    </div>
+  );
+}
+
+// ============================================================================
+// COMPONENT: Audio Visualizer
+// - Prejoin variant uses navigator.mediaDevices.getUserMedia so it can run
+//   before joining a LiveKit Room (no LiveKit hooks required).
+// - In-room variant uses LiveKit's `useTracks` hook and must be rendered
+//   inside a `LiveKitRoom` provider.
+// ============================================================================
+
+function AudioVisualizerInRoom() {
+  const canvasRef = React.useRef<HTMLCanvasElement>(null);
+  const audioContextRef = React.useRef<AudioContext | null>(null);
+  const analyserRef = React.useRef<AnalyserNode | null>(null);
+  
+  // This component must only be used inside a LiveKitRoom provider
+  const tracks = useTracks([Track.Source.Microphone]);
+  
+  React.useEffect(() => {
+    const audioTrack = tracks.find((t) => t.source === Track.Source.Microphone);
+    const mediaStreamTrack = (audioTrack as any)?.track?.mediaStreamTrack || (audioTrack as any)?.mediaStreamTrack;
+    if (!mediaStreamTrack) return;
+
+    try {
+      const AudioContextClass = window.AudioContext || (window as never)['webkitAudioContext'];
+      const ctx = new AudioContextClass();
+      const stream = new MediaStream([mediaStreamTrack]);
+      const source = ctx.createMediaStreamSource(stream);
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 2048;
+      source.connect(analyser);
+
+      audioContextRef.current = ctx;
+      analyserRef.current = analyser;
+
+      let animationId: number;
+      const dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+      const draw = () => {
+        const canvas = canvasRef.current;
+        if (!canvas || !analyserRef.current) {
+          animationId = requestAnimationFrame(draw);
+          return;
+        }
+
+        const ctx2 = canvas.getContext('2d');
+        if (!ctx2) {
+          animationId = requestAnimationFrame(draw);
+          return;
+        }
+
+        analyserRef.current!.getByteTimeDomainData(dataArray);
+
+        ctx2.fillStyle = 'rgb(17, 24, 39)';
+        ctx2.fillRect(0, 0, canvas.width, canvas.height);
+
+        ctx2.lineWidth = 2;
+        ctx2.strokeStyle = 'rgb(6, 182, 212)';
+        ctx2.beginPath();
+
+        const sliceWidth = canvas.width / dataArray.length;
+        let x = 0;
+
+        for (let i = 0; i < dataArray.length; i++) {
+          const v = dataArray[i] / 128.0;
+          const y = (v * canvas.height) / 2;
+
+          if (i === 0) ctx2.moveTo(x, y);
+          else ctx2.lineTo(x, y);
+
+          x += sliceWidth;
+        }
+
+        ctx2.stroke();
+        animationId = requestAnimationFrame(draw);
+      };
+
+      animationId = requestAnimationFrame(draw);
+
+      return () => {
+        cancelAnimationFrame(animationId);
+        ctx.close();
+      };
+    } catch (err) {
+      console.error('Failed to set up audio visualizer:', err);
+    }
+  }, [tracks]);
+
+  return (
+    <canvas ref={canvasRef} width={400} height={100} className="w-full h-20 rounded bg-gray-900" />
+  );
+}
+
+function AudioVisualizerPrejoin() {
+  const canvasRef = React.useRef<HTMLCanvasElement>(null);
+  const audioContextRef = React.useRef<AudioContext | null>(null);
+  const analyserRef = React.useRef<AnalyserNode | null>(null);
+  const mediaStreamRef = React.useRef<MediaStream | null>(null);
+
+  React.useEffect(() => {
+    let mounted = true;
+
+    const setup = async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        if (!mounted) {
+          stream.getTracks().forEach((t) => t.stop());
+          return;
+        }
+
+        mediaStreamRef.current = stream;
+
+        const AudioContextClass = window.AudioContext || (window as never)['webkitAudioContext'];
+        const ctx = new AudioContextClass();
+        const source = ctx.createMediaStreamSource(stream);
+        const analyser = ctx.createAnalyser();
+        analyser.fftSize = 2048;
+        source.connect(analyser);
+
+        audioContextRef.current = ctx;
+        analyserRef.current = analyser;
+
+        let animationId: number;
+        const dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+        const draw = () => {
+          const canvas = canvasRef.current;
+          if (!canvas || !analyserRef.current) {
+            animationId = requestAnimationFrame(draw);
             return;
           }
-        } catch {
-          // swallow and retry
-        }
-        // exponential-ish backoff
-          await delay(baseBackoff * attempt);
-      }
-  console.warn('RoomInstructionPublisher: failed to publish instruction after retries');
-    }
 
-    // fire-and-forget; the effect will clean up via cancelled flag
-    void publishWithRetry();
+          const ctx2 = canvas.getContext('2d');
+          if (!ctx2) {
+            animationId = requestAnimationFrame(draw);
+            return;
+          }
+
+          analyserRef.current!.getByteTimeDomainData(dataArray);
+
+          ctx2.fillStyle = 'rgb(17, 24, 39)';
+          ctx2.fillRect(0, 0, canvas.width, canvas.height);
+
+          ctx2.lineWidth = 2;
+          ctx2.strokeStyle = 'rgb(6, 182, 212)';
+          ctx2.beginPath();
+
+          const sliceWidth = canvas.width / dataArray.length;
+          let x = 0;
+
+          for (let i = 0; i < dataArray.length; i++) {
+            const v = dataArray[i] / 128.0;
+            const y = (v * canvas.height) / 2;
+
+            if (i === 0) ctx2.moveTo(x, y);
+            else ctx2.lineTo(x, y);
+
+            x += sliceWidth;
+          }
+
+          ctx2.stroke();
+          animationId = requestAnimationFrame(draw);
+        };
+
+        animationId = requestAnimationFrame(draw);
+
+        // cleanup for canvas/analyser
+        return () => {
+          cancelAnimationFrame(animationId);
+          ctx.close();
+        };
+      } catch (err) {
+        console.error('Failed to set up prejoin visualizer:', err);
+      }
+    };
+
+    const cleanupPromise = setup();
 
     return () => {
-      cancelled = true;
+      mounted = false;
+      // stop tracks
+      if (mediaStreamRef.current) {
+        mediaStreamRef.current.getTracks().forEach((t) => t.stop());
+      }
+      // audio context closed in inner cleanup
+      // if setup hasn't finished, ensure we still attempt to close
+      cleanupPromise.catch(() => {});
     };
-  }, [room, name, topic, personality]);
+  }, []);
+
+  return <canvas ref={canvasRef} width={400} height={100} className="w-full h-20 rounded bg-gray-900" />;
+}
+
+// ============================================================================
+// COMPONENT: Send Interview Config to Agent
+// ============================================================================
+
+function InterviewConfigPublisher({
+  name,
+  topic,
+  personality,
+  interviewId,
+}: {
+  name: string;
+  topic?: string;
+  personality?: string;
+  interviewId?: string;
+}) {
+  const { localParticipant } = useLocalParticipant();
+  const [published, setPublished] = React.useState(false);
+
+  React.useEffect(() => {
+    if (!localParticipant || published) return;
+
+    // Wait a bit for connection to stabilize
+    const timer = setTimeout(() => {
+      try {
+        const config = {
+          type: "agent.instruction",
+          name: name || "Candidate",
+          topic: topic || "General",
+          personality: personality || "balanced",
+          interviewId: interviewId || null,
+          instruction: `Conduct a ${personality || "balanced"} interview about ${topic || "general topics"} with ${name}.`,
+        };
+
+        localParticipant.publishData(
+          new TextEncoder().encode(JSON.stringify(config)),
+          { reliable: true }
+        );
+
+        setPublished(true);
+        console.log("✅ Published interview config to agent");
+      } catch (err) {
+        console.error("Failed to publish config:", err);
+      }
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [localParticipant, published, name, topic, personality, interviewId]);
+
   return null;
 }
 
-export default function InterviewRoom({ name, topic, personality, autoJoin }: Props) {
-  // default mock personality
-  const personalityLabel = personality ?? "Professional & Calm";
-  const [token, setToken] = React.useState<string | null>(null);
-  const [connecting, setConnecting] = React.useState(false);
-  const [connected, setConnected] = React.useState(false);
-  const [micLevel, setMicLevel] = React.useState(0);
-  const analyserRef = React.useRef<AnalyserNode | null>(null);
-  const videoRef = React.useRef<HTMLVideoElement | null>(null);
-  const localStreamRef = React.useRef<MediaStream | null>(null);
-  const [entries, setEntries] = React.useState<Entry[]>([]);
-  const [running, setRunning] = React.useState(false);
-  const [timeLeft, setTimeLeft] = React.useState(180); // default 3 minutes
-  const [showSummary, setShowSummary] = React.useState(false);
-  const [summary, setSummary] = React.useState<{ score: number; tone: string; pacing: string; notes: string } | null>(null);
-  const [showTranscript, setShowTranscript] = React.useState(false);
-  const [greeting, setGreeting] = React.useState<string | null>(null);
+// ============================================================================
+// MAIN COMPONENT: InterviewRoom
+// ============================================================================
 
-  // recording helpers (attach recorder to window for debug)
-  const [interviewId, setInterviewId] = React.useState<string | null>(null);
-  const [isRecording, setIsRecording] = React.useState(false);
-  const [uploadStatus, setUploadStatus] = React.useState<'idle' | 'uploading' | 'success' | 'error'>('idle');
-  const [uploadErrorText, setUploadErrorText] = React.useState<string | null>(null);
-  // option: read session from global auth context so uploads include user's access token when available
+export default function InterviewRoom({
+  name,
+  topic,
+  personality = "balanced",
+  autoJoin = false,
+  onLeave,
+}: InterviewRoomProps) {
   const { session } = useAuth();
   const router = useRouter();
-  const autoJoinTriggeredRef = React.useRef(false);
-  // client-side supabase (fallback) will be created on demand to read session for upload if needed
-  const supabaseClientForBrowser = React.useMemo(() => {
-    const url = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-    const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
-    if (!url || !anon) return null;
-    try {
-      return createSupabaseClient(url, anon, { auth: { persistSession: false } });
-    } catch {
-      return null;
-    }
-  }, []);
 
-  React.useEffect(() => {
-    let recorder: MediaRecorder | null = null;
-    let recordedChunks: BlobPart[] = [];
+  const [token, setToken] = React.useState<string | null>(null);
+  // track whether the LiveKitRoom reports we're connected
+  const [connected, setConnected] = React.useState(false);
+  const [interviewId, setInterviewId] = React.useState<string | null>(null);
+  const [connecting, setConnecting] = React.useState(false);
+  const [showTranscript, setShowTranscript] = React.useState(false);
+  const [showSummary, setShowSummary] = React.useState(false);
 
-    async function startRecording() {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        localStreamRef.current = stream;
-        const mr = new MediaRecorder(stream, { mimeType: 'audio/webm' });
-        mr.ondataavailable = (e) => {
-          if (e.data && e.data.size > 0) recordedChunks.push(e.data);
-        };
-        mr.onstop = async () => {
-          setIsRecording(false);
-          try {
-            // don't attempt upload when there's no recorded data
-            if (!recordedChunks || recordedChunks.length === 0) {
-              console.warn('no audio recorded — skipping upload');
-              setUploadStatus('idle');
-              return;
-            }
+  // ========================================================================
+  // JOIN INTERVIEW
+  // ========================================================================
 
-            const blob = new Blob(recordedChunks, { type: 'audio/webm' });
-            const form = new FormData();
-            const id = interviewId || (Math.random().toString(36).slice(2, 10));
-            form.append('interviewId', id);
-            form.append('file', blob, `${id}.webm`);
-            const base = process.env.NEXT_PUBLIC_BASE_URL || '';
-            setUploadStatus('uploading');
-            const headers: Record<string, string> = {};
-
-            // Prefer session from useAuth(); fall back to client supabase if available
-            try {
-              const accessFromCtx = session?.access_token;
-              if (accessFromCtx) {
-                headers['Authorization'] = `Bearer ${accessFromCtx}`;
-              } else if (supabaseClientForBrowser && typeof supabaseClientForBrowser.auth?.getSession === 'function') {
-                const s = await supabaseClientForBrowser.auth.getSession();
-                const access = s?.data?.session?.access_token;
-                if (access) headers['Authorization'] = `Bearer ${access}`;
-              }
-            } catch {
-              // ignore and continue; server will reject unauthorized uploads if needed
-            }
-
-            const res = await fetch(`${base}/api/interviews/audio/upload`, { method: 'POST', body: form, headers });
-            if (!res.ok) {
-              const text = await res.text().catch(() => '<no-body>');
-              console.error('audio upload failed', res.status, text);
-              setUploadStatus('error');
-              setUploadErrorText(`Upload failed (${res.status}): ${text}`);
-              return;
-            }
-            setUploadStatus('success');
-            setUploadErrorText(null);
-            // if we didn't have an interviewId yet, store the returned id (server doesn't return one here, so keep id)
-            if (!interviewId) setInterviewId(id);
-            // clear chunks
-            recordedChunks = [];
-          } catch (err) {
-            console.error('audio upload failed', err);
-            setUploadStatus('error');
-            setUploadErrorText(String(err ?? 'unknown'));
-          }
-        };
-        mr.start();
-        setIsRecording(true);
-        recorder = mr;
-  const win = window as unknown as { __localRecorder?: MediaRecorder };
-  win.__localRecorder = mr;
-      } catch (err) {
-        console.warn('could not start local recording', err);
-      }
-    }
-
-    // start recording only when we are actually connected to the room
-    if (connected) {
-      startRecording();
-    }
-
-    return () => {
-      try {
-        if (recorder && recorder.state !== 'inactive') recorder.stop();
-        if (localStreamRef.current) {
-          localStreamRef.current.getTracks().forEach((t) => t.stop());
-        }
-        setIsRecording(false);
-      } catch {
-        // ignore cleanup errors
-      }
-    };
-  }, [connected, interviewId, supabaseClientForBrowser, session?.access_token]);
-
-  React.useEffect(() => {
-    let raf = 0;
-    const tick = () => {
-      if (analyserRef.current) {
-        const data = new Uint8Array(analyserRef.current.fftSize);
-        analyserRef.current.getByteTimeDomainData(data);
-        let sum = 0;
-        for (let i = 0; i < data.length; i++) {
-          const v = (data[i] - 128) / 128;
-          sum += v * v;
-        }
-        const rms = Math.sqrt(sum / data.length);
-        setMicLevel(Math.min(1, rms * 3));
-      }
-      raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, []);
-
-  // mock AI questions rotation
-  React.useEffect(() => {
-    let id: number | undefined;
-    const questionsFor = (topicName = "General") => {
-      return [
-        `Tell me about a recent ${topicName} project you worked on.`,
-        `What was a technical challenge you faced on a ${topicName} problem?`,
-        `How do you approach debugging and testing in ${topicName}?`,
-        `Describe a time you improved performance or reliability in ${topicName}.`,
-      ];
-    };
-    if (running) {
-      const qs = questionsFor(topic ?? "General");
-      let idx = 0;
-      id = window.setInterval(() => {
-        pushEntry("AI", qs[idx % qs.length]);
-        idx++;
-      }, 20_000);
-    }
-    return () => { if (id !== undefined) clearInterval(id); };
-  }, [running, topic]);
-
-  // simple timer effect
-  // compute summary either via server endpoint or local heuristic
-  const computeSummary = React.useCallback(async () => {
-    // try server-side summarizer if available
-    try {
-      const res = await fetch("/api/ai/summary", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ entries }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setSummary(data);
-        setShowSummary(true);
-        return;
-      }
-      } catch {
-        // ignore and fall back
-        console.warn("server summary failed, falling back to local");
-      }
-
-    // local heuristic
-    const userEntries = entries.filter((e) => e.who === "User");
-    const totalUserWords = userEntries.reduce((s, e) => s + e.text.split(/\s+/).filter(Boolean).length, 0);
-    const avgWords = userEntries.length ? totalUserWords / userEntries.length : 0;
-    const pacing = avgWords < 8 ? "Slow" : avgWords < 20 ? "Good" : "Fast";
-    const textAll = entries.map((e) => e.text).join(" ").toLowerCase();
-    let tone = "Neutral";
-    if (/thank|great|excellent|awesome|confident|confidently/.test(textAll)) tone = "Positive";
-    if (/sorry|um\b|uh\b|like\b|guess\b|maybe\b/.test(textAll)) tone = "Hesitant";
-    const score = Math.round(Math.min(100, 40 + userEntries.length * 8 + Math.min(20, avgWords)));
-    const notes = userEntries.slice(-3).map((u) => `• ${u.text}`).join("\n");
-    const local = { score, tone, pacing, notes };
-    setSummary(local);
-    setShowSummary(true);
-  }, [entries]);
-
-  React.useEffect(() => {
-    if (!running) return;
-    if (timeLeft <= 0) {
-      setRunning(false);
-      // compute and show summary when timer ends
-      computeSummary();
+  const joinInterview = React.useCallback(async () => {
+    if (!session?.access_token) {
+      router.push("/auth");
       return;
     }
-    const id = window.setInterval(() => setTimeLeft((t) => t - 1), 1000);
-    return () => clearInterval(id);
-  }, [running, timeLeft, computeSummary]);
 
-  // helper to append transcript entries (mocked for now)
-  const pushEntry = (who: Entry["who"], text: string) => {
-    setEntries((s) => [...s, { who, text, ts: Date.now() }]);
-  };
+    setConnecting(true);
 
-  // Controls component: uses LiveKit hooks inside LiveKitRoom context
-  function Controls({ onLeave }: { onLeave?: () => void }) {
-  const room = useRoomContext() as unknown as LKRoomLike | null;
-    const [mutedLocal, setMutedLocal] = React.useState(false);
-
-    const toggleMuteLocal = async () => {
-      try {
-        if (room?.localParticipant && typeof room.localParticipant.setMicrophoneEnabled === "function") {
-          await room.localParticipant.setMicrophoneEnabled(!mutedLocal);
-          setMutedLocal((m) => !m);
-          return;
-        }
-        const tracks = (room?.localParticipant?.audioTracks ?? []) as TrackLike[];
-        tracks.forEach((t) => t.track?.enable ? t.track.enable(!mutedLocal) : null);
-        setMutedLocal((m) => !m);
-      } catch {
-        console.error("mute toggle failed");
-      }
-    };
-
-    const leaveLocal = async () => {
-      try {
-        // stop local recorder if running
-        try {
-        const win = window as unknown as { __localRecorder?: MediaRecorder };
-        const recorder = win.__localRecorder;
-        if (recorder && recorder.state !== 'inactive') {
-          recorder.stop();
-        }
-      } catch {
-          // ignore
-        }
-
-        if (room && typeof room.disconnect === "function") {
-          await room.disconnect();
-        }
-        setToken(null);
-        setConnected(false);
-        try { onLeave?.(); } catch (err) { console.error('onLeave callback failed', err); }
-      } catch (err) {
-        console.error("leave failed", err);
-      }
-    };
-
-    return (
-      <div className="flex gap-2 mt-3">
-        <button onClick={toggleMuteLocal} className="px-3 py-1 bg-gray-100 rounded">{mutedLocal ? "Unmute" : "Mute"}</button>
-        <button onClick={leaveLocal} className="px-3 py-1 bg-red-500 text-white rounded">Leave</button>
-        <button onClick={() => { setToken(null); setConnected(false); join(); }} className="px-3 py-1 border rounded">Reconnect</button>
-        <button onClick={() => { setRunning(false); computeSummary(); }} className="px-3 py-1 bg-amber-500 text-white rounded">End Interview</button>
-        <button onClick={() => { pushEntry("User", "(mock answer) I led the migration to TypeScript and improved performance by 30%."); }} className="px-3 py-1 border rounded">Add Mock Answer</button>
-        <button onClick={() => setShowTranscript((s: boolean) => !s)} className="px-3 py-1 border rounded">Toggle Transcript</button>
-      </div>
-    );
-  }
-
-  const join = React.useCallback(async () => {
     try {
-      setConnecting(true);
+      // Request mic permission
+      await navigator.mediaDevices.getUserMedia({ audio: true });
 
-      // require a signed-in session before allowing join + uploads
-      if (!session || !session.access_token) {
-        // push user to auth page to sign in
-        try {
-          router.replace('/auth');
-        } catch (err) {
-          // fallback to full-page navigation (log for debugging)
-          console.warn('router.replace failed, falling back to full navigation', err);
-          window.location.href = '/auth';
-        }
-        return;
+      // Get LiveKit token from your backend
+      const { fetchLivekitToken } = await import("../lib/fetchLivekitToken");
+      const resp = await fetchLivekitToken(name, "interview-room");
+
+      if (!resp?.token) {
+        throw new Error("Failed to get token");
       }
 
+      setToken(resp.token);
+      setInterviewId(resp.interviewId || `interview-${Date.now()}`);
 
-  // request microphone + camera permission for local preview
-  const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
-
-  try {
-  const win = window as unknown as { AudioContext?: typeof AudioContext; webkitAudioContext?: typeof AudioContext };
-  const Ctor = win.AudioContext || win.webkitAudioContext;
-  // Ctor might be undefined in some browsers; the 'any' here is constrained to the runtime constructor
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const ctx = new (Ctor as any)();
-        const src = ctx.createMediaStreamSource(stream as MediaStream);
-        const analyser = ctx.createAnalyser();
-        analyser.fftSize = 2048;
-        src.connect(analyser);
-        analyserRef.current = analyser;
-      } catch {
-        console.warn("AudioContext not available");
+      // Save to history
+      if (resp.interviewId) {
+        saveInterview({
+          id: resp.interviewId,
+          name: name || "Interview",
+          date: new Date().toISOString(),
+        });
       }
-
-      // set up local video preview
-      try {
-        localStreamRef.current = stream;
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          videoRef.current.play().catch(() => {});
-        }
-      } catch {
-        console.warn("video preview failed");
-      }
-
-  // fetch token from our secure server route
-  const { fetchLivekitToken } = await import("../lib/fetchLivekitToken");
-  const resp = await fetchLivekitToken(name, "interview-room");
-  if (!resp || !resp.token) throw new Error("no token returned");
-  setToken(resp.token);
-  if (resp.interviewId) setInterviewId(resp.interviewId);
-      // start timer and add a welcome question from AI after join
-      setRunning(true);
-      setTimeLeft(180);
-      setEntries([]);
-      setSummary(null);
-      setShowSummary(false);
-      setTimeout(() => pushEntry("AI", "Hi! Let's begin the interview. Tell me about your recent project."), 1200);
-    } catch (e) {
-      console.error("join failed", e);
-      // show a generic user-friendly message without leaking internal error shape
-      alert("Failed to join interview: " + (e instanceof Error ? e.message : String(e)));
+    } catch (err) {
+      console.error("Join failed:", err);
+      alert(`Failed to join: ${err instanceof Error ? err.message : "Unknown error"}`);
     } finally {
       setConnecting(false);
     }
   }, [session, router, name]);
 
-  const retryUpload = React.useCallback(() => {
-    // force a stop/start cycle of the recorder to re-trigger onstop upload flow
-    try {
-      const win = window as unknown as { __localRecorder?: MediaRecorder };
-      const rec = win.__localRecorder;
-      if (rec && rec.state !== 'inactive') {
-        rec.stop();
-      }
-    } catch {
-      // ignore
-    }
-  }, []);
-
-  // Auto-join when autoJoin prop is set. join() is a stable callback.
+  // Auto-join if prop is set
   React.useEffect(() => {
-    if (autoJoin && !autoJoinTriggeredRef.current) {
-      autoJoinTriggeredRef.current = true;
-      void join();
+    if (autoJoin && !token) {
+      void joinInterview();
     }
-  }, [autoJoin, join]);
+  }, [autoJoin, token, joinInterview]);
+
+  // ========================================================================
+  // RENDER: Pre-join screen
+  // ========================================================================
+
+  if (!token) {
+    return (
+      <div className="w-full max-w-4xl mx-auto bg-white rounded-2xl shadow-lg p-8">
+        <h2 className="text-2xl font-bold mb-6">🎙️ AI Interview Setup</h2>
+        
+        <div className="space-y-4 mb-6">
+          <div>
+            <span className="font-medium">Candidate:</span> {name}
+          </div>
+          <div>
+            <span className="font-medium">Topic:</span> {topic || "General"}
+          </div>
+          <div>
+            <span className="font-medium">Personality:</span> {personality}
+          </div>
+        </div>
+
+  <AudioVisualizerPrejoin />
+
+        <button
+          onClick={joinInterview}
+          disabled={connecting}
+          className="mt-6 px-6 py-3 bg-gradient-to-r from-cyan-500 to-blue-600 text-white rounded-lg font-medium hover:scale-105 transition disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {connecting ? "Connecting..." : "🚀 Start Interview"}
+        </button>
+      </div>
+    );
+  }
+
+  // ========================================================================
+  // RENDER: In-interview screen
+  // ========================================================================
 
   return (
-  <div className="w-full max-w-4xl mx-auto bg-white rounded-2xl shadow-lg p-6">
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-lg font-semibold flex items-center gap-2">🎙️ <span>AI Interview Assistant</span></h2>
-        <div className="flex items-center gap-3">
-          <div className="text-sm text-gray-600">{connected ? "Connected" : token ? "Connecting..." : "Not connected"}</div>
-          {/* recording badge */}
-          <div className="flex items-center gap-2">
-            <div className={`w-3 h-3 rounded-full ${isRecording ? 'bg-red-500 animate-pulse' : 'bg-gray-300'}`} />
-            <div className="text-xs text-gray-500">{isRecording ? 'Recording' : 'Idle'}</div>
-          </div>
-          {/* upload status */}
-          <div className="text-xs">
-            {uploadStatus === 'idle' && <span className="text-gray-500">No upload</span>}
-            {uploadStatus === 'uploading' && <span className="text-amber-600">Uploading…</span>}
-            {uploadStatus === 'success' && <span className="text-emerald-600">Upload OK</span>}
-            {uploadStatus === 'error' && <span className="text-red-600">Upload failed</span>}
-            {uploadStatus === 'error' && uploadErrorText ? (
-              <div className="mt-2 text-xs text-red-600">
-                <div>{uploadErrorText}</div>
-                <button onClick={retryUpload} className="mt-1 px-2 py-1 bg-red-100 text-red-700 rounded text-xs">Retry</button>
-              </div>
-            ) : null}
-          </div>
-        </div>
-      </div>
-
-  {!token ? (
-        <div className="p-6 border rounded-md">
-          <p className="mb-3 text-gray-700">Ready to join the live AI interview as <span className="font-semibold">{name}</span>.</p>
-
-          <div className="mb-4">
-            <div className="text-sm text-gray-600 mb-2">Microphone level</div>
-            <div className="w-full h-3 bg-gradient-to-r from-gray-100 to-gray-200 rounded overflow-hidden">
-              <div
-                className="h-full bg-gradient-to-r from-emerald-400 via-yellow-300 to-red-400 transition-all"
-                style={{ width: `${Math.round(micLevel * 100)}%`, transitionDuration: "120ms" }}
-              />
-            </div>
-            <div className="text-xs text-gray-500 mt-2">Speak to see the level update. Make sure your mic is allowed.</div>
-          </div>
-
-          <div className="flex gap-3">
-            <button onClick={join} disabled={connecting} className="px-4 py-2 bg-gradient-to-r from-sky-600 to-indigo-600 text-white rounded-md shadow hover:scale-[1.01] transition inline-flex items-center gap-2">
-              {connecting ? (
-                <>
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" className="opacity-25"/><path d="M4 12a8 8 0 018-8" stroke="currentColor" strokeWidth="4" className="opacity-75"/></svg>
-                  Joining…
-                </>
-              ) : (
-                <>
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path d="M10 2a1 1 0 00-.993.883L9 3v6.586L5.707 7.293a1 1 0 00-1.414 1.414l5 5a1 1 0 001.414 0l5-5a1 1 0 00-1.414-1.414L11 9.586V3a1 1 0 00-1-1z"/></svg>
-                  Join Interview
-                </>
-              )}
-            </button>
-            <button onClick={() => alert('Test sound')} className="px-4 py-2 border rounded-md inline-flex items-center gap-2">
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-gray-600" viewBox="0 0 20 20" fill="currentColor"><path d="M9 2a1 1 0 00-1 1v3H5a1 1 0 100 2h3v3a1 1 0 102 0V8h3a1 1 0 100-2H11V3a1 1 0 00-1-1z"/></svg>
-              Test Audio
-            </button>
-          </div>
-        </div>
-      ) : (
-        <LiveKitRoom
-          token={token}
-          serverUrl={process.env.NEXT_PUBLIC_LIVEKIT_URL}
-          connect={true}
-          audio={true}
-          video={false}
-          onConnected={() => setConnected(true)}
-          onDisconnected={() => {
-            setConnected(false);
+    <div className="w-full max-w-6xl mx-auto bg-white rounded-2xl shadow-lg p-6">
+      <LiveKitRoom
+        token={token}
+        serverUrl={process.env.NEXT_PUBLIC_LIVEKIT_URL}
+        connect={true}
+        audio={true}
+        video={false}
+        // Enable LiveKit recording-friendly options
+        options={{
+          dynacast: true,
+          adaptiveStream: true,
+        }}
+        onConnected={() => setConnected(true)}
+        onDisconnected={() => {
+          setConnected(false);
+          setToken(null);
+          onLeave?.();
+        }}
+      >
+        {/* This component lives INSIDE LiveKitRoom so it can use hooks */}
+        <InterviewRoomContent
+          name={name}
+          topic={topic}
+          personality={personality}
+          interviewId={interviewId}
+          showTranscript={showTranscript}
+          showSummary={showSummary}
+          onToggleTranscript={() => setShowTranscript(!showTranscript)}
+          onEndInterview={() => setShowSummary(true)}
+          onLeave={() => {
             setToken(null);
+            onLeave?.();
           }}
-        >
-          {/* show greeting banner if the agent published a greeting data message */}
-          {greeting ? (
-            <div className="p-3 mb-3 bg-amber-100 border-l-4 border-amber-400 rounded">
-              <div className="font-semibold">Agent greeting</div>
-              <div className="text-sm text-gray-700">{greeting}</div>
-              <button onClick={() => setGreeting(null)} className="text-xs text-gray-500 mt-1">Dismiss</button>
-            </div>
-          ) : null}
-
-          {/* DataMessageHandler attaches inside LiveKitRoom so hooks are available */}
-          <DataMessageHandler onGreeting={(text: string) => { console.log('agent.greeting', text); setGreeting(text); }} />
-          <RoomAudioRenderer />
-          <RoomInstructionPublisher name={name} topic={topic} personality={personality} />
-          <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="md:col-span-2 relative">
-              {/* AI interviewer central feed (mock) */}
-              <div className="w-full h-64 bg-gray-100 rounded-lg flex items-center justify-center">
-                <div className="text-center">
-                  <div className="w-40 h-40 rounded-full bg-gradient-to-br from-sky-400 to-indigo-600 flex items-center justify-center text-white text-xl font-bold mx-auto">AI</div>
-                  <div className="mt-3 font-semibold">{personalityLabel} — AI Interviewer</div>
-                  <div className="text-sm text-gray-500">(Mock video feed)</div>
-                </div>
-              </div>
-
-              {/* bottom-left local preview */}
-              <div className="absolute left-4 bottom-4 w-36 h-24 bg-black rounded overflow-hidden shadow">
-                <video ref={videoRef} className="w-full h-full object-cover" muted playsInline />
-              </div>
-
-              <ParticipantsPanel />
-              <div className="mt-4 text-sm text-gray-500">Time left: {Math.max(0, timeLeft)}s</div>
-              <Controls />
-            </div>
-            <div>
-              {/** transcript drawer **/}
-              {showTranscript ? (
-                <TranscriptPanel entries={entries} />
-              ) : (
-                <div className="p-4 border rounded text-sm text-gray-500">Transcript hidden — click Toggle Transcript to open.</div>
-              )}
-            </div>
-          </div>
-          <SummaryModal open={showSummary} onClose={() => setShowSummary(false)} summary={summary ?? { score: 0, tone: "", pacing: "", notes: "" }} />
-        </LiveKitRoom>
-      )}
+        />
+      </LiveKitRoom>
     </div>
   );
 }
 
-function DataMessageHandler({ onGreeting }: { onGreeting: (text: string) => void }) {
-  // This component must be inside LiveKitRoom to use the hook
-  const room = useRoomContext() as unknown as LKRoomLike | null;
+// ============================================================================
+// INNER COMPONENT: Must be inside LiveKitRoom to use hooks
+// ============================================================================
 
-  React.useEffect(() => {
-    if (!room) return;
+function InterviewRoomContent({
+  name,
+  topic,
+  personality,
+  interviewId,
+  showTranscript,
+  showSummary,
+  onToggleTranscript,
+  onEndInterview,
+  onLeave,
+}: {
+  name: string;
+  topic?: string;
+  personality?: string;
+  interviewId?: string | null;
+  showTranscript: boolean;
+  showSummary: boolean;
+  onToggleTranscript: () => void;
+  onEndInterview: () => void;
+  onLeave: () => void;
+}) {
+  const { greeting, summary, behaviorFlags, setGreeting } = useAgentMessages();
+  const entries = useInterviewTranscript();
+  const room = useRoomContext();
+  const remotes = useRemoteParticipants();
 
-  const handler = (payload: unknown) => {
-      try {
-        let data: unknown = payload;
-        if (payload instanceof ArrayBuffer) {
-          data = new TextDecoder().decode(new Uint8Array(payload));
-        } else if (payload instanceof Uint8Array) {
-          data = new TextDecoder().decode(payload);
-        }
+  // room.state is a string-like state; avoid using the ConnectionState component type here
+  const connectionState = room?.state as unknown as string | undefined;
+  const isConnected = connectionState === 'connected' || connectionState === 'Connected';
 
-        if (typeof data === 'object' && data !== null && Object.prototype.hasOwnProperty.call(data, 'data')) {
-          const rec = data as Record<string, unknown>;
-          data = rec.data as unknown;
-        }
+  return (
+    <>
+      <RoomAudioRenderer />
+      
+      {/* Send config to agent once connected */}
+      {isConnected && (
+        <InterviewConfigPublisher
+          name={name}
+          topic={topic}
+          personality={personality}
+          interviewId={interviewId || undefined}
+        />
+      )}
 
-        let obj: unknown = null;
-        if (typeof data === 'string') {
-          try {
-            obj = JSON.parse(data);
-          } catch {
-            obj = null;
-          }
-        } else if (typeof data === 'object' && data !== null) {
-          obj = data;
-        }
+      {/* Connection status */}
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-xl font-semibold">
+          🎤 Live Interview
+        </h2>
+        <div className="flex items-center gap-3">
+          <div
+            className={`px-3 py-1 rounded-full text-sm ${
+              isConnected
+                ? "bg-green-100 text-green-700"
+                : "bg-yellow-100 text-yellow-700"
+            }`}
+          >
+            {isConnected ? "● Connected" : "○ Connecting..."}
+          </div>
+          <div className="text-sm text-gray-600">
+            {remotes.length > 0 ? "AI Agent Active" : "Waiting for agent..."}
+          </div>
+        </div>
+      </div>
 
-        if (obj && typeof obj === 'object' && (obj as Record<string, unknown>).type === 'agent.greeting') {
-          const candidate = (obj as Record<string, unknown>);
-          const text = (candidate.text as string) || (candidate.message as string) || String(candidate);
-          onGreeting(text);
-        }
-      } catch {
-        console.warn('DataMessageHandler: error processing data message');
-      }
-    };
+      {/* Agent greeting banner */}
+      {greeting && (
+        <div className="mb-4 p-4 bg-blue-50 border-l-4 border-blue-500 rounded">
+          <div className="flex items-start justify-between">
+            <div>
+              <div className="font-medium text-blue-900">Agent says:</div>
+              <div className="text-blue-800">{greeting}</div>
+            </div>
+            <button
+              onClick={() => setGreeting(null)}
+              className="text-blue-600 hover:text-blue-800"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
 
-    try {
-      if (typeof room.on === 'function') {
-        room.on('dataReceived', handler);
-        room.on('data_received', handler);
-      }
-    } catch {
-      console.warn('DataMessageHandler: failed to attach handlers');
-    }
+      {/* Behavior flags */}
+      {behaviorFlags.length > 0 && (
+        <div className="mb-4 p-3 bg-amber-50 border-l-4 border-amber-500 rounded">
+          <div className="font-medium text-amber-900">⚠️ Areas to improve:</div>
+          <ul className="mt-2 space-y-1">
+            {behaviorFlags.map((flag, i) => (
+              <li key={i} className="text-sm text-amber-800">
+                • {flag}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
-    return () => {
-      try {
-        if (typeof room.off === 'function') {
-          room.off('dataReceived', handler);
-          room.off('data_received', handler);
-        }
-      } catch {
-        // ignore
-      }
-    };
-  }, [room, onGreeting]);
+      {/* Main content grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Video area */}
+        <div className="lg:col-span-2">
+          <div className="aspect-video bg-gradient-to-br from-gray-900 to-gray-800 rounded-lg flex items-center justify-center">
+            <div className="text-center text-white">
+              <div className="w-32 h-32 mx-auto rounded-full bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center text-4xl">
+                🤖
+              </div>
+              <div className="mt-4 text-lg font-medium">{personality} AI Interviewer</div>
+              <div className="text-sm text-gray-400">Voice-only interview</div>
+            </div>
+          </div>
 
-  return null;
+          <AudioVisualizerInRoom />
+          
+          <InterviewControls
+            onEndInterview={onEndInterview}
+            onLeave={onLeave}
+          />
+        </div>
+
+        {/* Sidebar */}
+        <div className="space-y-4">
+          <button
+            onClick={onToggleTranscript}
+            className="w-full px-4 py-2 border rounded-lg hover:bg-gray-50"
+          >
+            {showTranscript ? "Hide" : "Show"} Transcript
+          </button>
+
+          {showTranscript && <TranscriptPanel entries={entries} />}
+          {/* Debug panel to help diagnose missing audio/transcript */}
+          <DebugPanel />
+        </div>
+      </div>
+
+      {/* Summary modal */}
+      {showSummary && summary && (
+        <SummaryModal
+          open={true}
+          summary={summary}
+          onClose={() => window.location.reload()}
+        />
+      )}
+    </>
+  );
 }
