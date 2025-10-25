@@ -1,3 +1,94 @@
+<!-- Copilot instructions: short, actionable, repository-specific -->
+
+# interview-ai — quick guide for coding agents
+
+Keep this short: the frontend is a Next.js (App Router) TypeScript app; the canonical analysis engine is a LiveKit-based Python agent in `backend/`.
+
+Key contracts and behaviour
+- GET /api/livekit/token (`src/app/api/livekit/token/route.ts`) → { token, interviewId }
+  - Generates LiveKit AccessToken and attempts to create an `interviews` row (prefers Supabase service role, falls back to direct PG or anon Supabase).
+- POST /api/interviews/audio/upload (`src/app/api/interviews/audio/upload/route.ts`) — multipart form with `interviewId` + `file`. Requires `Authorization: Bearer <supabase-token>`; uploads to Supabase storage bucket `interviews` and upserts `audio_path`/`audio_signed_url`.
+- Summaries/analysis: the codebase prefers the LiveKit agent (`backend/agent.py`). The in-tree summarization and analyze endpoints are intentionally disabled (return 501) to avoid duplicate/conflicts. Use the agent's data-channel messages or `BACKEND_AGENT_URL` when present.
+
+Data patterns & conventions
+- `interviews` table (`src/db/schema.ts`) stores `transcript` and `analysis` as TEXT containing serialized JSON strings — code expects `JSON.parse(row.transcript)`.
+- Audio/video stored in Supabase storage; signed URLs are saved to the interview row for server-side access.
+
+Dev & debug commands (Windows bash)
+```bash
+npm install
+npm run dev       # start Next dev server
+npm run build
+npm run start
+npm run db:migrate       # run SQL migrations against $DATABASE_URL
+```
+Python agent (optional/local):
+```bash
+python -m venv .venv
+source .venv/Scripts/activate   # Windows bash
+pip install -r backend/requirements.txt
+python backend/app.py
+```
+
+Where to look first (examples)
+- Token + interview creation: `src/app/api/livekit/token/route.ts` (service role / DB fallback logic)
+- Audio uploads: `src/app/api/interviews/audio/upload/route.ts` (formData -> supabase.storage)
+- DB schema: `src/db/schema.ts` (transcript/analysis stored as JSON strings)
+- Disabled endpoints: `src/app/api/ai/summary/route.ts`, `src/app/api/interviews/analyze/route.ts` (return 501; agent is canonical)
+- Agent: `backend/agent.py` (LiveKit agent, retry logic, TTS/LLM helpers, function tools)
+
+Important env vars
+- LIVEKIT_API_KEY, LIVEKIT_API_SECRET
+- SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY, DATABASE_URL
+- OPENAI_API_KEY or OPENROUTER_API_KEY (+ OPENROUTER_API_BASE)
+- BACKEND_AGENT_URL (if using HTTP proxy to a local agent)
+
+Project-specific gotchas (do not change silently)
+- The LiveKit Python agent is the single source of truth for summaries/analysis — do not re-enable the disabled server endpoints without coordinating agent behavior.
+- Transcripts/analysis are serialized JSON strings in text columns — changing this shape requires updating multiple routes and the agent.
+- `src/db/client.ts` may dynamically skip `drizzle-orm` if not installed — migrations live in `drizzle/migrations/` and `supabase/migrations/`.
+
+If you want examples (sample request payloads, agent topics, or common log messages) say which area to expand.
+<!-- Copilot instructions: short, actionable, repository-specific -->
+
+# Overview
+
+
+# Important contracts
+
+
+# Key files to inspect
+
+
+# Env vars to know
+
+
+# Dev & debug commands
+
+```bash
+npm install
+npm run dev       # next dev (turbopack)
+npm run build
+npm run start
+npm run db:migrate       # runs psql migrations against $DATABASE_URL
+npm run db:migrate-node  # JS migration runner
+```
+
+Backend quick-run:
+
+```bash
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r backend/requirements.txt
+python backend/app.py
+```
+
+# Project-specific gotchas (do not change these silently)
+
+
+# Where to look first
+
+
 <!--
 Guidance for AI coding agents working on the interview-ai repository.
 Keep this short, actionable, and tied to concrete files and patterns in the repo.
@@ -15,9 +106,7 @@ Keep this short, actionable, and tied to concrete files and patterns in the repo
 - The interview transcript is stored as JSON in the `interviews` table (see `src/db/schema.ts`) in a text column (`transcript`). Code expects a JSON string when reading/writing.
 - Audio is uploaded by the client to `POST /api/interviews/audio/upload` (`src/app/api/interviews/audio/upload/route.ts`). The route expects a multipart/form-data with `interviewId` and `file` and an Authorization header (Supabase token). Files are saved to the Supabase storage bucket `interviews` and a signed URL is returned.
 - Summarization is available at `src/app/api/ai/summary/route.ts`. Behavior in priority order:
-  1. If `BACKEND_AGENT_URL` is set, proxy the request to that backend agent's `/api/summary`.
-  2. Else if `OPENAI_API_KEY` is set, call OpenAI to generate a JSON summary from entries (expects entries: Array<{who,text,ts}>).
-  3. Else return 501 with a message describing missing configuration.
+ - Summarization is available at `src/app/api/ai/summary/route.ts` but this repository prefers the LiveKit agent (`backend/agent.py`) as the canonical analyzer. The route is disabled in-tree to avoid duplicate/conflicting analysis; in-room summaries are published by the agent over LiveKit data channels.
 - Interview analysis uses OpenRouter/Claude in `src/app/api/interviews/analyze/route.ts`. It reads the `interviews` row via Supabase, composes a system prompt and returns structured JSON plus locally computed metrics (filler words, pauses, avg response length).
 
 # Key files to inspect (examples of patterns)
@@ -30,53 +119,69 @@ Keep this short, actionable, and tied to concrete files and patterns in the repo
 - DB client: `src/db/client.ts` — uses dynamic import for `drizzle-orm/node-postgres` (may be missing in some dev environments); code tolerates absence of drizzle.
 - Frontend helper: `src/lib/fetchLivekitToken.ts` — example of consuming the token endpoint from the client-side and the returned shape.
 - Backend agent: `backend/agent.py` and `backend/app.py` — optional Python FastAPI agent example for summarization and LiveKit agents.
+ - Backend agent: `backend/agent.py` — the LiveKit interview agent is the canonical analyzer. The previous FastAPI HTTP summarizer has been removed to avoid duplication.
 
 # Environment & runtime expectations
+<!-- Copilot instructions: short, actionable, repository-specific -->
 
-- Required (for full functionality):
-  - LIVEKIT_API_KEY, LIVEKIT_API_SECRET — used by the token generator (`/api/livekit/token`).
-  - SUPABASE keys / DATABASE_URL — used by Supabase client and server-side DB writes.
-  - OPENAI_API_KEY or OPENROUTER_API_KEY (OPENROUTER_API_BASE + OPENROUTER_API_KEY) — used by summarization or analysis routes.
-  - BACKEND_AGENT_URL — optional; if present, summarizer proxies to this HTTP service (e.g., `http://localhost:8000`).
+# Overview
 
-# Developer workflows & commands
+- Tech: Next.js (App Router) + TypeScript frontend. Optional Python FastAPI backend in `backend/`.
+- All server integrations live under `src/app/api/*` (LLM summarization, LiveKit token, audio uploads, analysis).
+- Persistence: Supabase/Postgres. `drizzle/migrations/` manages interviews; `supabase/migrations/` manages payments/profiles.
 
-- Install and run dev frontend:
-  - npm install
-  - npm run dev  (uses `next dev --turbopack`)
-- Build and start production:
-  - npm run build
-  - npm run start
-- DB migrations / seeding:
-  - `npm run db:migrate` runs two psql commands against $DATABASE_URL (see `package.json`).
-  - `npm run db:migrate-node` runs `scripts/run-migrations.js` for JS-driven migrations.
-  - For Supabase-specific migrations see `supabase/migrations/` and `package.json`'s `db:push` script.
-- Backend Python agent (optional):
-  - Create venv, pip install -r `backend/requirements.txt`, then run `python backend/app.py` or `python backend/agent.py`.
-  - Docker: build using `backend/Dockerfile` and run; point `BACKEND_AGENT_URL` at the container.
+# Important contracts
 
-# Project-specific conventions and gotchas
+- GET `/api/livekit/token` → { token, interviewId? } (see `src/app/api/livekit/token/route.ts` — also upserts an `interviews` row).
+- POST `/api/ai/summary` → { entries: Array<{who,text,ts?}> } (see `src/app/api/ai/summary/route.ts`). Proxy order: BACKEND_AGENT_URL -> OpenAI -> 501.
+- POST `/api/interviews/audio/upload` → multipart form `interviewId`, `file`; requires `Authorization: Bearer <supabase-token>`; returns signed URL (see `src/app/api/interviews/audio/upload/route.ts`).
 
-- Transcript storage: transcripts are stored as serialized JSON in a text field. When reading, the code commonly does `JSON.parse(rows[0].transcript)` and expects an array of objects with { speaker/ who, text, ts }.
-- Authorization: the audio upload endpoint expects a Supabase auth token in the Authorization header and will call `supabase.auth.getUser(token)`.
-- Signed URLs: uploads create signed URLs via `supabase.storage.from('interviews').createSignedUrl(...)` and store `audio_path` and `audio_signed_url` back to the interviews row.
-- Dynamic imports: `src/db/client.ts` dynamically imports `drizzle-orm` so some dev environments may not have it installed; code handles this gracefully — installing drizzle is optional for quick frontend-only changes.
-- External LLM providers: analysis uses OpenRouter/Claude with a strict JSON response format; the Summarizer expects parsable JSON from OpenAI and tries to heuristically extract JSON if the model returns markdown or text.
+# Key files to inspect
 
-# Contract snippets (copyable examples)
+- `src/app/api/livekit/token/route.ts` — LiveKit AccessToken + initial DB upsert.
+- `src/app/api/ai/summary/route.ts` — fallback logic and JSON extraction heuristics when LLM returns markdown/text.
+- `src/app/api/interviews/analyze/route.ts` — calls OpenRouter/Claude; reads `interviews.transcript` JSON string and returns `analysis` + computed `metrics`.
+- `src/db/schema.ts` & `src/db/client.ts` — `interviews` table uses `transcript: text` and `analysis: text`; `src/db/client.ts` dynamically imports `drizzle-orm`.
+- `backend/agent.py` / `backend/app.py` — optional local agent used when BACKEND_AGENT_URL is set.
 
-- Token GET (frontend calls `src/lib/fetchLivekitToken.ts`): returns `{ token: string, interviewId?: string }`.
-- Summary POST payload (client -> `src/app/api/ai/summary/route.ts`): `{ entries: Array<{ who: string, text: string, ts?: string }> }` -> returns `{ score, tone, pacing, notes }` or proxies to backend agent output.
-- Audio upload form (multipart/form-data): fields `interviewId`, `file`; requires `Authorization: Bearer <supabase-token>` header. Response includes `{ ok: true, path, signedUrl }`.
+# Env vars to know
 
-# Troubleshooting hints
+- LIVEKIT_API_KEY, LIVEKIT_API_SECRET — LiveKit token generation.
+- SUPABASE_URL + SUPABASE_ANON_KEY / SERVICE_KEY or DATABASE_URL — DB & storage.
+- OPENAI_API_KEY or OPENROUTER_API_KEY (+ OPENROUTER_API_BASE) — LLM calls.
+- BACKEND_AGENT_URL — if present, summarizer proxies to this service.
+ - BACKEND_AGENT_URL — previously used to point the Next.js summarizer at a local Python summarizer; this mode is deprecated in this repo. Use the LiveKit agent instead.
 
-- If LiveKit token generation fails: ensure `LIVEKIT_API_KEY` and `LIVEKIT_API_SECRET` are set. Check server logs in `src/app/api/livekit/token/route.ts` for stack traces.
-- If OpenAI/OpenRouter calls return parsing errors: inspect the raw LLM response logged by the route and adjust model/ prompt (see `src/app/api/interviews/analyze/route.ts` and `src/app/api/ai/summary/route.ts`).
-- If DB writes fail locally, the routes attempt both direct PG writes (via `DATABASE_URL`) and Supabase upserts — set whichever you use.
+# Dev & debug commands
 
-# Where to look next
+```bash
+npm install
+npm run dev       # next dev (turbopack)
+npm run build
+npm run start
+npm run db:migrate       # runs psql migrations against $DATABASE_URL
+npm run db:migrate-node  # JS migration runner
+```
 
-- Start with these files: `src/app/api/livekit/token/route.ts`, `src/app/api/ai/summary/route.ts`, `src/app/api/interviews/analyze/route.ts`, `src/app/api/interviews/audio/upload/route.ts`, `src/db/schema.ts`, `backend/agent.py`.
+Backend quick-run:
 
-If anything here is unclear or you'd like more examples (sample requests/responses or common PR patterns), tell me which section to expand and I will iterate.
+```bash
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r backend/requirements.txt
+python backend/app.py
+```
+
+# Project-specific gotchas (do not change these silently)
+
+- Transcripts and analysis are stored as serialized JSON strings in text columns. Code expects `JSON.parse(row.transcript)`.
+- The summarizer prefers BACKEND_AGENT_URL when set; tests and local dev often set this to the Python agent.
+- `src/db/client.ts` will dynamically skip `drizzle-orm` if it's not installed; installing drizzle is only necessary for running migrations.
+- Audio upload endpoints require a Supabase auth token and write `audio_path` + `audio_signed_url` to the interviews row.
+
+# Where to look first
+
+- `src/app/api/livekit/token/route.ts`, `src/app/api/ai/summary/route.ts`, `src/app/api/interviews/analyze/route.ts`, `src/app/api/interviews/audio/upload/route.ts`, `src/db/schema.ts`, `backend/agent.py`.
+
+If anything is missing or you want sample requests, tell me which area to expand.
+- LLM parsing errors → inspect raw LLM responses logged in `src/app/api/ai/summary/route.ts` and `src/app/api/interviews/analyze/route.ts`.

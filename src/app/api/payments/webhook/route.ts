@@ -18,7 +18,7 @@ function verifySignature(raw: string, signatureHeader: string | null) {
   const expected = crypto.createHmac('sha256', secret).update(signed).digest('hex');
   try {
     return crypto.timingSafeEqual(Buffer.from(expected, 'hex'), Buffer.from(h1, 'hex'));
-  } catch (_) {
+  } catch {
     return false;
   }
 }
@@ -38,7 +38,7 @@ export async function POST(req: NextRequest) {
     let event: any;
     try {
       event = JSON.parse(raw);
-    } catch (e) {
+    } catch {
       console.warn('Failed to parse Paddle Billing webhook JSON');
       return NextResponse.json({ ok: false, error: 'invalid json' }, { status: 400 });
     }
@@ -59,7 +59,7 @@ export async function POST(req: NextRequest) {
       const subId = data.subscription?.id ?? data.subscription_id ?? data.subscriptionId ?? data.subscription ?? null;
       const userId = (data.custom_data?.userId ?? data.custom_data?.user_id ?? data.custom_data?.user) || (data.transaction?.custom_data?.userId ?? data.transaction?.custom_data?.user_id ?? null) || null;
       await supabase.from('subscription_events').insert({ id: String(evId), subscription_id: subId || undefined, user_id: userId || undefined, event_type: type, event_time: new Date().toISOString(), payload: event });
-    } catch (e) {
+    } catch {
       // ignore
     }
 
@@ -138,8 +138,8 @@ export async function POST(req: NextRequest) {
               try { await supabase.from('profiles').upsert({ id: userId, pro: true, pro_expires_at: expiresAt }, { returning: 'minimal' }); } catch {}
             }
           }
-        } catch (e) {
-          console.warn('failed to handle transaction pro/subscription mapping', e);
+        } catch (_e) {
+          console.warn('failed to handle transaction pro/subscription mapping', _e);
         }
       } else if (type === 'subscription.created' || type === 'subscription.updated' || type === 'subscription.canceled' || type === 'subscription.deleted') {
         const sub = data.subscription ?? data;
@@ -207,8 +207,8 @@ export async function POST(req: NextRequest) {
       } else {
         // Unhandled event types are fine; we stored raw event above
       }
-    } catch (e) {
-      console.warn('Error processing paddle billing webhook', e);
+    } catch (_e) {
+      console.warn('Error processing paddle billing webhook', _e);
     }
 
     return NextResponse.json({ ok: true });

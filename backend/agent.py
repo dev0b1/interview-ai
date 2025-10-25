@@ -20,6 +20,7 @@ from livekit.agents import (
 )
 from livekit.agents.llm import ChatContext, ChatMessage
 from livekit.plugins import silero, openai
+import aiohttp
 
 # Import retry utilities
 from tenacity import (
@@ -408,6 +409,69 @@ async def end_interview(ctx: RunContext):
     ai_feedback = await _generate_feedback(summary, interview_ctx.config, ctx.session)
     _save_results(interview_ctx, summary, ai_feedback)
 
+    # Publish final results to LiveKit data channel so the frontend (InterviewRoom)
+    # can receive the summary/feedback in-room. We attempt to publish on
+    # `interview_results` first and fall back to `agent-messages` for older clients.
+    try:
+        room = getattr(ctx, "room", None) or getattr(getattr(ctx, "session", None), "room", None)
+        if room and getattr(room, "local_participant", None):
+            payload = json.dumps({
+                "type": "agent.interview_complete",
+                "results": {
+                    "summary": summary.get("user_summary"),
+                    "internal_metrics": summary.get("internal_metrics"),
+                    "ai_feedback": ai_feedback,
+                },
+            }).encode()
+
+            try:
+                await room.local_participant.publish_data(payload, topic="interview_results")
+            except Exception:
+                # Older clients listen on `agent-messages` topic — try that as a fallback.
+                try:
+                    await room.local_participant.publish_data(payload, topic="agent-messages")
+                except Exception as e:
+                    logger.warning(f"Failed to publish interview results on fallback topic: {e}")
+        else:
+            logger.info("No room/local_participant available to publish interview results")
+    except Exception as e:
+        logger.warning(f"Failed to publish interview results to data channel: {e}")
+
+    # Attempt to upsert results to the Next.js server so the interview detail page
+    # can display results outside the LiveKit room. This uses a shared secret and
+    # the AGENT_UPSERT_URL env var (e.g. https://app.example.com/api/interviews/upsert-results).
+    try:
+        upsert_url = os.getenv('AGENT_UPSERT_URL')
+        upsert_secret = os.getenv('AGENT_UPSERT_SECRET')
+        if upsert_url and upsert_secret:
+            async def _post_results():
+                payload = {
+                    'interviewId': getattr(interview_ctx, 'interview_id', None) or os.getenv('INTERVIEW_ID') or None,
+                    'analysis': summary.get('user_summary'),
+                    'ai_feedback': ai_feedback,
+                    'internal_metrics': summary.get('internal_metrics'),
+                    'transcript': getattr(interview_ctx, 'conversation_history', None) or None,
+                    'video_signed_url': (room_metadata.get('video_signed_url') if isinstance(room_metadata, dict) else None),
+                }
+                try:
+                    async with aiohttp.ClientSession() as session_http:
+                        headers = {'Content-Type': 'application/json', 'x-agent-secret': upsert_secret}
+                        async with session_http.post(upsert_url, json=payload, headers=headers, timeout=20) as resp:
+                            if resp.status >= 400:
+                                text = await resp.text()
+                                logger.warning(f"Agent upsert failed: {resp.status} {text}")
+                            else:
+                                logger.info("Agent results upserted successfully")
+                except Exception as e:
+                    logger.warning(f"Exception posting upsert results: {e}")
+
+            # fire-and-forget but don't block the end_interview flow
+            asyncio.create_task(_post_results())
+        else:
+            logger.debug('AGENT_UPSERT_URL or AGENT_UPSERT_SECRET not configured; skipping results upsert')
+    except Exception as e:
+        logger.warning(f"Failed to initiate results upsert: {e}")
+
     # Use safe_say with retry logic
     try:
         await safe_say(
@@ -741,6 +805,14 @@ async def entrypoint(ctx: JobContext):
         core_questions=get_questions_for_config(config)
     )
 
+    # populate interview_id from room metadata if present
+    try:
+        iid = room_metadata.get('interviewId') or room_metadata.get('interview_id') or None
+        if iid:
+            interview_ctx.interview_id = str(iid)
+    except Exception:
+        pass
+
     # Setup voice pipeline with timeout configurations
     llm_instance = openai.LLM(
         model="mistralai/mistral-7b-instruct:free",
@@ -751,11 +823,13 @@ async def entrypoint(ctx: JobContext):
     session = AgentSession(
         # VAD disabled: Using Deepgram's built-in endpointing
         # If you experience interruption issues, enable Silero VAD:
-        # vad=silero.VAD.load(),
+        vad=silero.VAD.load(min_silence_duration=0.6),
         stt="deepgram/nova-2:en",
         llm=llm_instance,
         tts="cartesia/sonic-2:79a125e8-cd45-4c13-8a67-188112f4dd22",
         userdata=interview_ctx,
+        min_endpointing_delay=0.5,
+        max_endpointing_delay=2.0,
     )
 
     agent = InterviewerAgent(interview_ctx=interview_ctx)

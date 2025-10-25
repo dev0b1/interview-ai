@@ -19,21 +19,23 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'livekit not configured' }, { status: 500 });
     }
 
-    const svc = new RoomServiceClient(livekitUrl, livekitKey, livekitSecret) as any;
+  type SvcLike = { listEgress?: (opts: { roomName: string }) => Promise<Record<string, unknown>> };
+  const svc = new RoomServiceClient(livekitUrl, livekitKey, livekitSecret) as unknown as SvcLike;
     if (typeof svc.listEgress !== 'function') {
       // server SDK doesn't expose listEgress in this runtime; return not implemented
       return NextResponse.json({ error: 'listEgress not available on RoomServiceClient' }, { status: 501 });
     }
-    const list = await svc.listEgress({ roomName });
+  const list = await svc.listEgress({ roomName });
 
     // choose first file result with a downloadUrl
     let recordingUrl: string | null = null;
-    for (const r of list.egress ?? []) {
-      const fr = (r.fileResults ?? [])[0];
-      if (fr && (fr.downloadUrl || fr.filepath)) {
-        recordingUrl = fr.downloadUrl || fr.filepath || null;
-        break;
-      }
+    const egressArr = Array.isArray((list as Record<string, unknown>)['egress']) ? ((list as Record<string, unknown>)['egress'] as unknown[]) : [];
+    for (const r of egressArr) {
+      const rObj = r as Record<string, unknown>;
+      const frArr = Array.isArray(rObj['fileResults']) ? (rObj['fileResults'] as unknown[]) : [];
+      const fr = frArr[0] as Record<string, unknown> | undefined;
+      const downloadUrl = fr ? String(fr['downloadUrl'] || fr['filepath'] || '') : '';
+      if (downloadUrl) { recordingUrl = downloadUrl; break; }
     }
 
     if (!recordingUrl) {

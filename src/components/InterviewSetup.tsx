@@ -2,7 +2,6 @@
 
 import React from "react";
 import { motion } from "framer-motion";
-import { useAuth } from "../lib/useAuth";
 
 type Props = {
   onStart: (opts: { topic: string; personality: string }) => void;
@@ -16,7 +15,7 @@ const personalities = [
   "Technical Expert (Deep Dives)",
 ];
 
-export default function InterviewSetup({ onStart, initialName = "" }: Props) {
+export default function InterviewSetup({ onStart }: Props) {
   // No name input required — app requires authenticated users. Frontend will
   // provide a descriptive name (display name + email fallback) when starting.
   const [topic, setTopic] = React.useState("Frontend Engineer");

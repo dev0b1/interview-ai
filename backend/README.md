@@ -43,27 +43,11 @@ Notes
 - Never commit real API keys. Use environment variables or a secrets manager.
 - For local testing, ensure your LiveKit server is reachable and that your Next.js token generator uses the same API key/secret.
 
-FastAPI wrapper (HTTP)
-----------------------
+HTTP summarization wrapper archived
+----------------------------------
 
-This repository also includes a small FastAPI wrapper to expose a simple HTTP summarization endpoint. It lives in `app.py` and provides `POST /api/summary` which accepts the transcript entries (array of {who, text, ts}) and returns a compact summary.
+The older FastAPI HTTP summarizer (`app.py` / `summary_agent.py`) has been archived under `backend/archive/` to avoid duplicate analysis paths. The LiveKit agent in `agent.py` is the canonical analyzer and publishes results in-room via LiveKit data channels.
 
-Run locally:
-
-```bash
-python -m venv .venv
-source .venv/bin/activate   # on Windows use .venv\Scripts\activate
-pip install -r requirements.txt
-python app.py
-```
-
-Run with Docker:
-
-```bash
-docker build -t interview-agent .
-docker run -p 8000:8000 interview-agent
-```
-
-When running, point the Next.js env var `BACKEND_AGENT_URL` at this service (e.g. `http://localhost:8000`) so the Next summarizer will proxy requests to it.
+If you need an HTTP summarization service in the future, prefer building a thin proxy that forwards requests to the agent or use a secure server-side upsert endpoint that the agent calls with results. The archived code is kept for reference in `backend/archive/` but is not used by the application.
 
 *** End Patch

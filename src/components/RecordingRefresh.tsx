@@ -29,9 +29,9 @@ export default function RecordingRefresh({ interviewId, roomName = 'interview-ro
       }
       setStatus('error');
       setMsg(j.message || j.error || 'no recording yet');
-    } catch (e: any) {
+    } catch (e: unknown) {
       setStatus('error');
-      setMsg(e?.message || String(e));
+      setMsg((e as Error)?.message || String(e));
     }
   };
 

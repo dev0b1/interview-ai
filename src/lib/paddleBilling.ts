@@ -42,8 +42,10 @@ export async function cancelSubscription(id: string, opts?: any) {
   return await client.subscriptions.cancel(id as any, opts || {});
 }
 
-export default {
+const paddleBilling = {
   createTransaction,
   getSubscription,
   cancelSubscription,
 };
+
+export default paddleBilling;

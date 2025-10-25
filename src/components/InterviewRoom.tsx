@@ -20,9 +20,8 @@ import {
   RoomAudioRenderer,
   useDataChannel,
   useTracks,
-  ConnectionState,
 } from "@livekit/components-react";
-import { Track, RoomEvent, DataPacket_Kind } from "livekit-client";
+import { Track, RoomEvent } from "livekit-client";
 import type { Room, RemoteParticipant } from "livekit-client";
 import TranscriptPanel, { Entry } from "./TranscriptPanel";
 import { saveInterview } from "../lib/history";
@@ -68,7 +67,7 @@ function useAgentMessages() {
   const [greeting, setGreeting] = React.useState<string | null>(null);
   const [summary, setSummary] = React.useState<InterviewSummary | null>(null);
   const [behaviorFlags, setBehaviorFlags] = React.useState<string[]>([]);
-  const [rawMessages, setRawMessages] = React.useState<any[]>([]);
+  const _rawMessagesRef = React.useRef<Array<{ topic?: string; data: Record<string, unknown> }>>([]);
 
   // LiveKit provides this hook to handle data messages
   // Agent may publish on different topics; listen to both common ones used by agent.py
@@ -76,12 +75,13 @@ function useAgentMessages() {
   const { message: msgInterview } = useDataChannel("interview_results");
 
   React.useEffect(() => {
-    const process = (messageVar: any) => {
-      if (!messageVar) return;
-      try {
-        const text = new TextDecoder().decode(messageVar.payload);
-        const data = JSON.parse(text) as AgentDataMessage | any;
-        setRawMessages((m) => [{ topic: messageVar.topic, data }, ...m].slice(0, 20));
+    const process = (messageVar: unknown) => {
+        if (!messageVar) return;
+        try {
+          const mv = messageVar as { payload?: Uint8Array; topic?: string };
+          const text = new TextDecoder().decode(mv.payload as Uint8Array);
+          const data = JSON.parse(text) as AgentDataMessage | Record<string, unknown>;
+          _rawMessagesRef.current = [{ topic: mv.topic, data }, ..._rawMessagesRef.current].slice(0, 20);
 
         // Normalize some common event shapes the backend uses
         const type = data?.type || data?.event || null;
@@ -93,16 +93,21 @@ function useAgentMessages() {
 
           case "interview_complete":
           case "agent.interview_complete":
-            console.log("Interview complete:", data.results || data);
-            // if the payload contains summary/metrics attach to summary
-            if (data.results && data.results.score) {
+            console.log("Interview complete:", (data as Record<string, unknown>)['results'] || data);
+            // if the payload contains summary/metrics attach to summary (use safe access)
+            const results = ((data as Record<string, unknown>)['results'] ?? data) as Record<string, unknown> | undefined;
+            if (results) {
+              const scoreObj = results['score'] as Record<string, unknown> | undefined;
+              const overall = scoreObj && typeof scoreObj === 'object' ? Number(scoreObj['overall_score'] as number || 0) : 0;
+              const tone = String(results['personality'] || '');
+              const ai_fb = String(results['ai_feedback'] || results['aiFeedback'] || '');
               setSummary({
-                score: data.results.score.overall_score || 0,
-                tone: data.results.personality || "",
+                score: overall,
+                tone,
                 pacing: "",
-                notes: data.results.ai_feedback || "",
+                notes: ai_fb,
                 metrics: {},
-                ai_feedback: data.results.ai_feedback || "",
+                ai_feedback: ai_fb,
               });
             }
             break;
@@ -149,13 +154,20 @@ function DebugPanel() {
 
     const log = (msg: string) => setEvents((s) => [msg, ...s].slice(0, 50));
 
-    const onParticipant = (p: any) => log(`participant: ${p.identity} connected`);
-    const offParticipant = (p: any) => log(`participant: ${p.identity} disconnected`);
-    const onData = (pkt: any) => {
+    const onParticipant = (p: unknown) => {
+      const id = (p as Record<string, unknown>)['identity'] as string | undefined;
+      log(`participant: ${id} connected`);
+    };
+    const offParticipant = (p: unknown) => {
+      const id = (p as Record<string, unknown>)['identity'] as string | undefined;
+      log(`participant: ${id} disconnected`);
+    };
+    const onData = (pkt: unknown) => {
       try {
-        const text = new TextDecoder().decode(pkt.data);
-        log(`data[${pkt.topic || 'unknown'}]: ${text.substring(0,120)}`);
-      } catch (e) {
+        const pk = pkt as { data?: Uint8Array; topic?: string };
+        const text = new TextDecoder().decode(pk.data as Uint8Array);
+        log(`data[${pk.topic || 'unknown'}]: ${text.substring(0,120)}`);
+      } catch {
         log(`data: <binary>`);
       }
     };
@@ -164,7 +176,7 @@ function DebugPanel() {
       room.on(RoomEvent.ParticipantConnected as never, onParticipant as never);
       room.on(RoomEvent.ParticipantDisconnected as never, offParticipant as never);
       room.on(RoomEvent.DataReceived as never, onData as never);
-    } catch (e) {
+      } catch {
       // ignore
     }
 
@@ -173,7 +185,7 @@ function DebugPanel() {
         room.off(RoomEvent.ParticipantConnected as never, onParticipant as never);
         room.off(RoomEvent.ParticipantDisconnected as never, offParticipant as never);
         room.off(RoomEvent.DataReceived as never, onData as never);
-      } catch (e) {}
+  } catch {}
     };
   }, [room]);
 
@@ -205,23 +217,23 @@ function useInterviewTranscript() {
 
     // LiveKit emits transcription events
     const handleTranscription = (
-      transcription: any,
-      participant?: RemoteParticipant,
-      publication?: unknown
-    ) => {
+        transcription: unknown,
+        participant?: RemoteParticipant
+      ) => {
       // transcription may come as a string or an object depending on LiveKit version/provider
       let text = '';
       if (!transcription) text = '';
       else if (typeof transcription === 'string') text = transcription;
       else if (typeof transcription === 'object') {
         // common shapes: { text }, { transcript }, { segments: [...] }
-        if (typeof (transcription as any).text === 'string') text = (transcription as any).text;
-        else if (typeof (transcription as any).transcript === 'string') text = (transcription as any).transcript;
-        else if (Array.isArray((transcription as any).segments)) {
+        const tObj = transcription as Record<string, unknown>;
+        if (typeof tObj.text === 'string') text = String(tObj.text);
+        else if (typeof tObj.transcript === 'string') text = String(tObj.transcript);
+        else if (Array.isArray(tObj.segments)) {
           // join segments if present
           try {
-            text = (transcription as any).segments.map((s: any) => s.text || s.content || '').join(' ');
-          } catch (e) {
+            text = (tObj.segments as unknown[]).map((s) => String(((s as Record<string, unknown>)['text']) || ((s as Record<string, unknown>)['content']) || '')).join(' ');
+          } catch {
             text = String(transcription);
           }
         } else {
@@ -244,7 +256,7 @@ function useInterviewTranscript() {
     };
 
     // Some LiveKit versions use different event names
-    room.on(RoomEvent.TranscriptionReceived as never, handleTranscription as never);
+  room.on(RoomEvent.TranscriptionReceived as never, handleTranscription as never);
     
     return () => {
       room.off(RoomEvent.TranscriptionReceived as never, handleTranscription as never);
@@ -261,12 +273,16 @@ function useInterviewTranscript() {
 function InterviewControls({
   onEndInterview,
   onLeave,
+  interviewId,
 }: {
   onEndInterview: () => void;
   onLeave: () => void;
+  interviewId?: string | null;
 }) {
   const { localParticipant } = useLocalParticipant();
   const [isMuted, setIsMuted] = React.useState(false);
+  const [isRecording, setIsRecording] = React.useState(false);
+  const [egressId, setEgressId] = React.useState<string | null>(null);
   const room = useRoomContext();
 
   const toggleMute = async () => {
@@ -277,6 +293,41 @@ function InterviewControls({
       setIsMuted(!isMuted);
     } catch (err) {
       console.error("Failed to toggle mute:", err);
+    }
+  };
+
+  const startRecording = async () => {
+    try {
+      if (!room) throw new Error('missing room');
+      const roomName = String((room as unknown as Room).name || '');
+      const interviewIdToSend = interviewId || null;
+
+      if (!roomName || !interviewIdToSend) throw new Error('missing roomName or interviewId');
+
+      const body = { roomName, interviewId: interviewIdToSend, format: 'mp4' };
+      const res = await fetch('/api/livekit/egress/start', { method: 'POST', body: JSON.stringify(body), headers: { 'Content-Type': 'application/json' } });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error || 'failed to start egress');
+      const id = json?.result?.egressId || json?.result?.id || json?.result?.egress?.id || null;
+      setEgressId(id);
+      setIsRecording(true);
+    } catch (err) {
+      console.error('Failed to start recording', err);
+      alert(`Failed to start recording: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
+
+  const stopRecording = async () => {
+    try {
+      if (!egressId) throw new Error('no egressId');
+      const res = await fetch('/api/livekit/egress/stop', { method: 'POST', body: JSON.stringify({ egressId }), headers: { 'Content-Type': 'application/json' } });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error || 'failed to stop egress');
+      setIsRecording(false);
+      // keep egressId around for potential inspection
+    } catch (err) {
+      console.error('Failed to stop recording', err);
+      alert(`Failed to stop recording: ${err instanceof Error ? err.message : String(err)}`);
     }
   };
 
@@ -311,6 +362,31 @@ function InterviewControls({
       >
         Leave Room
       </button>
+
+      {/* Recording controls */}
+      <div className="ml-2 flex items-center gap-2">
+        {!isRecording ? (
+          <button
+            onClick={startRecording}
+            className="px-3 py-2 bg-green-500 hover:bg-green-600 text-white rounded-md transition"
+            title="Start recording"
+          >
+            ⏺ Start Recording
+          </button>
+        ) : (
+          <button
+            onClick={stopRecording}
+            className="px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded-md transition"
+            title="Stop recording"
+          >
+            ⏹ Stop Recording
+          </button>
+        )}
+
+        <div className="text-sm text-gray-600">
+          {isRecording ? (egressId ? `Recording (${egressId})` : 'Recording...') : 'Not recording'}
+        </div>
+      </div>
     </div>
   );
 }
@@ -333,7 +409,18 @@ function AudioVisualizerInRoom() {
   
   React.useEffect(() => {
     const audioTrack = tracks.find((t) => t.source === Track.Source.Microphone);
-    const mediaStreamTrack = (audioTrack as any)?.track?.mediaStreamTrack || (audioTrack as any)?.mediaStreamTrack;
+    // audioTrack can have different shapes depending on SDK versions; attempt common access patterns
+    let mediaStreamTrack: MediaStreamTrack | null = null;
+    try {
+      const at = audioTrack as unknown as Record<string, unknown>;
+      if (at?.track && typeof at.track === 'object') {
+        mediaStreamTrack = ((at.track as Record<string, unknown>)['mediaStreamTrack']) as MediaStreamTrack | undefined ?? null;
+      } else {
+        mediaStreamTrack = ((at as Record<string, unknown>)['mediaStreamTrack']) as MediaStreamTrack | undefined ?? null;
+      }
+    } catch {
+      mediaStreamTrack = null;
+    }
     if (!mediaStreamTrack) return;
 
     try {
@@ -573,7 +660,7 @@ export default function InterviewRoom({
 
   const [token, setToken] = React.useState<string | null>(null);
   // track whether the LiveKitRoom reports we're connected
-  const [connected, setConnected] = React.useState(false);
+  const [, setConnected] = React.useState(false);
   const [interviewId, setInterviewId] = React.useState<string | null>(null);
   const [connecting, setConnecting] = React.useState(false);
   const [showTranscript, setShowTranscript] = React.useState(false);
@@ -827,6 +914,7 @@ function InterviewRoomContent({
           <InterviewControls
             onEndInterview={onEndInterview}
             onLeave={onLeave}
+            interviewId={interviewId}
           />
         </div>
 

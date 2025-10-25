@@ -10,7 +10,7 @@ export default function HistoryPage() {
   useAuth();
   const [list, setList] = React.useState<InterviewRecord[]>([]);
   const [pending, setPending] = React.useState<Array<{ id: string; ts: number }>>([]);
-  const [remoteInfo, setRemoteInfo] = React.useState<Record<string, { audioUrl?: string }>>({});
+  const [remoteInfo, setRemoteInfo] = React.useState<Record<string, { audioUrl?: string; videoUrl?: string }>>({});
 
   React.useEffect(() => setList(getHistory()), []);
 
@@ -20,7 +20,7 @@ export default function HistoryPage() {
     let mounted = true;
     async function loadRemote() {
       const items = getHistory();
-      const map: Record<string, { audioUrl?: string }> = {};
+  const map: Record<string, { audioUrl?: string; videoUrl?: string }> = {};
       await Promise.all(items.map(async (it) => {
         try {
           const headers: Record<string,string> = { 'Content-Type': 'application/json' };
@@ -30,8 +30,9 @@ export default function HistoryPage() {
           const json = await res.json();
           const data = json.data || {};
           const audio = data.audio_signed_url || null;
-          if (audio) map[it.id] = { audioUrl: audio };
-        } catch (e) {
+          const video = data.video_signed_url || null;
+          if (audio || video) map[it.id] = { audioUrl: audio || undefined, videoUrl: video || undefined };
+        } catch {
           // ignore
         }
       }));
@@ -113,7 +114,9 @@ export default function HistoryPage() {
               </div>
               <div className="flex items-center gap-3">
                 <div className="text-sm text-gray-700">{r.score ? `${r.score}/100` : pendingIds.has(r.id) ? 'Uploading…' : '—'}</div>
-                {remoteInfo[r.id]?.audioUrl ? (
+                {remoteInfo[r.id]?.videoUrl ? (
+                  <a href={remoteInfo[r.id].videoUrl} target="_blank" rel="noreferrer" className="px-2 py-1 text-sm border rounded text-sky-600">Recording</a>
+                ) : remoteInfo[r.id]?.audioUrl ? (
                   <a href={remoteInfo[r.id].audioUrl} target="_blank" rel="noreferrer" className="px-2 py-1 text-sm border rounded text-sky-600">Recording</a>
                 ) : null}
                 <button onClick={() => window.location.href = `/interviews/${r.id}`} disabled={pendingIds.has(r.id)} className="px-2 py-1 text-sm border rounded {pendingIds.has(r.id) ? 'opacity-50 pointer-events-none' : ''}">View</button>

@@ -20,7 +20,7 @@ function verifySignature(raw: string, signatureHeader: string | null) {
   const expected = crypto.createHmac('sha256', secret).update(signed).digest('hex');
   try {
     return crypto.timingSafeEqual(Buffer.from(expected, 'hex'), Buffer.from(h1, 'hex'));
-  } catch (_) {
+  } catch {
     return false;
   }
 }
@@ -40,7 +40,7 @@ export async function POST(req: NextRequest) {
     // Basic storage for webhook payloads
     try {
       await supabase.from('payments').insert({ id: event.id ?? undefined, provider: 'paddle_billing', raw: event, status: type });
-    } catch (e) {
+    } catch {
       // ignore storage errors
     }
 
@@ -48,8 +48,8 @@ export async function POST(req: NextRequest) {
     // Example: subscription.created, subscription.updated, subscription.canceled, transaction.completed
 
     return NextResponse.json({ received: true });
-  } catch (err: any) {
-    console.error('Paddle Billing webhook error', err?.message || err);
-    return NextResponse.json({ error: String(err?.message || err) }, { status: 500 });
+  } catch (err: unknown) {
+    console.error('Paddle Billing webhook error', (err as any)?.message || err);
+    return NextResponse.json({ error: String((err as any)?.message || err) }, { status: 500 });
   }
 }

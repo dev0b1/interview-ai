@@ -44,6 +44,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (!mounted) return;
         setSession(sess);
         setUser((sess as any)?.user ?? null);
+        // Ensure a public `profiles` row exists for this auth user so admin stats
+        // and profile-driven features work without manual migrations.
+        try {
+          const authUser = (sess as any)?.user ?? null;
+          if (authUser && authUser.id) {
+            const displayName = (authUser.user_metadata && (authUser.user_metadata as any).full_name) || authUser.user_metadata?.name || null;
+            // best-effort upsert (anon key may be allowed depending on RLS)
+            // don't block UI on this operation
+            (async () => {
+              try {
+                await (supabase as any).from('profiles').upsert({ id: authUser.id, email: authUser.email, display_name: displayName }, { returning: 'minimal' });
+              } catch {
+                // ignore profile sync errors in client
+              }
+            })();
+          }
+        } catch {
+          // ignore
+        }
         // set a non-HttpOnly cookie with the access token so server middleware can read it
         try {
           if (sess && (sess as any).access_token) {
@@ -79,6 +98,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           const nextSession = (s as any) ?? null;
           setSession(nextSession);
           setUser((nextSession as any)?.user ?? null);
+
+          // on sign-in events, ensure profiles upsert
+          try {
+            const authUser = (nextSession as any)?.user ?? null;
+            if (authUser && authUser.id) {
+              const displayName = (authUser.user_metadata && (authUser.user_metadata as any).full_name) || authUser.user_metadata?.name || null;
+              (async () => {
+                try {
+                  await (supabase as any).from('profiles').upsert({ id: authUser.id, email: authUser.email, display_name: displayName }, { returning: 'minimal' });
+                } catch {
+                  // ignore
+                }
+              })();
+            }
+          } catch {
+            // ignore
+          }
         });
 
   // mark initialization complete once we've set initial session

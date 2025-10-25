@@ -83,8 +83,11 @@ export async function GET(request: Request) {
       }
     }
 
-    // NOTE: Auto Egress should be configured in the LiveKit dashboard for automatic recordings.
-    // We intentionally do not start egress programmatically here to prefer Auto Egress.
+  // NOTE: This project now prefers manual egress control so users can choose
+  // whether to record. Use the API endpoints:
+  //  - POST /api/livekit/egress/start to start a recording programmatically
+  //  - POST /api/livekit/egress/stop to stop a recording (use egressId returned from start)
+  // The fallback route POST /api/livekit/egress/list can still be used to discover completed recordings.
 
     return NextResponse.json({ token: jwt, interviewId });
   } catch (e) {

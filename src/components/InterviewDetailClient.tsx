@@ -9,7 +9,7 @@ type TranscriptItem = { speaker?: string; ts?: string | number; text?: string };
 export default function InterviewDetailClient({ id }: { id: string }) {
   const { session } = useAuth();
   const [loading, setLoading] = React.useState(true);
-  const [data, setData] = React.useState<any>(null);
+  const [data, setData] = React.useState<unknown>(null);
   const [error, setError] = React.useState<string | null>(null);
 
   React.useEffect(() => {
@@ -21,13 +21,18 @@ export default function InterviewDetailClient({ id }: { id: string }) {
         if (session?.access_token) headers['Authorization'] = `Bearer ${session.access_token}`;
         const res = await fetch('/api/interviews/get', { method: 'POST', headers, body: JSON.stringify({ id }) });
         if (!res.ok) {
-          const j = await res.json().catch(() => ({}));
-          throw new Error(j.error || `fetch failed ${res.status}`);
+          const j = await res.json().catch(() => null) as unknown;
+          let errMsg = `fetch failed ${res.status}`;
+          if (j && typeof j === 'object' && 'error' in (j as Record<string, unknown>)) {
+            const maybeErr = (j as Record<string, unknown>)['error'];
+            errMsg = typeof maybeErr === 'string' ? maybeErr : JSON.stringify(maybeErr);
+          }
+          throw new Error(errMsg);
         }
-        const json = await res.json();
+        const json = await res.json() as { data?: unknown; error?: unknown };
         if (mounted) setData(json.data || {});
-      } catch (e: any) {
-        if (mounted) setError(e?.message || String(e));
+      } catch (e: unknown) {
+        if (mounted) setError((e as Error)?.message || String(e));
       } finally {
         if (mounted) setLoading(false);
       }
@@ -39,9 +44,11 @@ export default function InterviewDetailClient({ id }: { id: string }) {
   if (loading) return <div className="p-6">Loading…</div>;
   if (error) return <div className="p-6 text-rose-600">Error: {error}</div>;
 
-  const transcript = typeof data?.transcript === 'string' ? JSON.parse(String(data.transcript)) : (data?.transcript || []) as TranscriptItem[];
-  const analysis = typeof data?.analysis === 'string' ? JSON.parse(String(data.analysis)) : (data?.analysis || {});
-  const audioUrl = data?.audio_signed_url || null;
+  const row = (data && typeof data === 'object') ? data as Record<string, unknown> : {} as Record<string, unknown>;
+  const transcript = typeof row?.transcript === 'string' ? JSON.parse(String(row.transcript)) : (row?.transcript || []) as TranscriptItem[];
+  const analysis = typeof row?.analysis === 'string' ? JSON.parse(String(row.analysis)) : (row?.analysis || {});
+  const audioUrl = (row?.audio_signed_url as string) || null;
+  const videoUrl = (row?.video_signed_url as string) || null;
 
   // derive simple metrics from transcript
   const fillerWords = ['um','uh','like','you know','actually','so','right'];
@@ -92,7 +99,15 @@ export default function InterviewDetailClient({ id }: { id: string }) {
       <h2 className="text-lg font-semibold mt-4">AI Feedback</h2>
       <pre className="bg-gray-50 p-3 rounded">{String((analysis.ai_feedback as unknown) || (analysis.feedback as unknown) || '')}</pre>
       <h2 className="text-lg font-semibold mt-4">Transcript</h2>
-      {audioUrl ? (
+      {videoUrl ? (
+        <div className="mt-3 mb-4">
+          <video controls src={videoUrl} className="w-full" />
+          <div className="mt-2 flex items-center justify-between">
+            <a className="text-sm text-sky-600" href={videoUrl} target="_blank" rel="noreferrer">Download video</a>
+            <ShareControls audioUrl={videoUrl} />
+          </div>
+        </div>
+      ) : audioUrl ? (
         <div className="mt-3 mb-4">
           <audio controls src={audioUrl} className="w-full" />
           <div className="mt-2 flex items-center justify-between">

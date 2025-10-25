@@ -3,15 +3,22 @@ import { supabase } from '@/lib/supabaseClient';
 
 export async function POST(req: NextRequest) {
   try {
-    const { id } = await req.json();
+    // parse request body safely (some callers may POST without a body)
+    let body: Record<string, unknown> = {};
+    try {
+      body = (await req.json()) as Record<string, unknown> || {};
+    } catch {
+      body = {};
+    }
+    const id = String(body?.id || req.nextUrl.searchParams.get('id') || '');
     if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 });
 
-    // Fetch interview row (we'll include audio only when ownership verified)
-  const { data, error } = await supabase.from('interviews').select('id, transcript, analysis, status, created_at, audio_path, audio_signed_url, owner').eq('id', id).limit(1);
+    // Fetch interview row. Avoid selecting audio columns that may not exist in older schemas.
+    const { data, error } = await supabase.from('interviews').select('id, transcript, analysis, status, created_at, owner').eq('id', id).limit(1);
     if (error) throw error;
     if (!data || !data[0]) return NextResponse.json({ error: 'not found' }, { status: 404 });
 
-    const row = data[0] as Record<string, any>;
+  const row = data[0] as Record<string, unknown>;
 
     // Default: do not expose audio URL unless the requester is authenticated and owns the file
     const authHeader = req.headers.get('authorization') || '';

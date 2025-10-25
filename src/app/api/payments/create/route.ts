@@ -1,9 +1,15 @@
+import crypto from 'crypto';
+import { NextRequest, NextResponse } from 'next/server';
+import { supabase } from '@/lib/supabaseClient';
+import { createTransaction } from '@/lib/paddleBilling';
+
 // Small UUIDv4 generator (crypto-backed when available)
 function uuidv4(): string {
   try {
-    const b = crypto.getRandomValues(new Uint8Array(16));
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (b[6] &= 0x0f), (b[6] |= 0x40), (b[8] &= 0x3f), (b[8] |= 0x80);
+  const b = crypto.getRandomValues(new Uint8Array(16));
+  // RFC4122 variant/time_hi_and_version adjustments
+  b[6] = (b[6] & 0x0f) | 0x40;
+  b[8] = (b[8] & 0x3f) | 0x80;
     const s = Array.from(b).map((n: number) => n.toString(16).padStart(2, '0')).join('');
     return `${s.substr(0,8)}-${s.substr(8,4)}-${s.substr(12,4)}-${s.substr(16,4)}-${s.substr(20,12)}`;
   } catch {
@@ -18,10 +24,7 @@ function uuidv4(): string {
 
 type CreateBody = { amount?: string; currency?: string; product_id?: string };
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
-import { NextRequest, NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabaseClient';
-import { createTransaction } from '@/lib/paddleBilling';
+// keep explicit any allowed in this file for the minimal UUID helper
 
 export async function POST(req: NextRequest) {
   try {
@@ -53,12 +56,14 @@ export async function POST(req: NextRequest) {
     if (billingKey && product_id) {
       try {
         const base = process.env.NEXT_PUBLIC_BASE_URL || '';
-        const payload: any = {
+        const payload: Record<string, unknown> = {
           items: [{ priceId: product_id, quantity: 1 }],
           customData: { userId: passthrough },
           checkoutSettings: { successUrl: `${base.replace(/\/$/, '')}/settings?payment=success` },
         };
-        const tx = await createTransaction(payload);
+  // SDK expects any; disable the lint rule for this third-party call
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const tx = await createTransaction(payload as any);
         // tx shape depends on SDK; attempt to return common fields
         const transactionId = tx?.id ?? tx?.transaction?.id ?? tx?.data?.id;
         const checkoutUrl = tx?.checkoutUrl ?? tx?.transaction?.checkoutUrl ?? tx?.data?.checkout_url ?? tx?.data?.checkoutUrl;

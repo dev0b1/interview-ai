@@ -19,6 +19,9 @@ pydantic
 # Env loader for local development
 python-dotenv
 
+# HTTP client for agent -> nextjs upsert
+aiohttp
+
 # Optional: torch/torchaudio for local silero (uncomment & pick correct wheel for your platform)
 # torch
 # torchaudio

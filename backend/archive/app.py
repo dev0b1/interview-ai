@@ -11,9 +11,8 @@ try:
 except Exception:
     openai = None
 
-# The HTTP summarizer (summary_agent) has been removed. The LiveKit agent in
-# `agent.py` is the canonical analyzer. Keep a None placeholder so the app
-# continues to run without raising ImportError when checking for a summarizer.
+# The summary_agent module has been removed. Keep a None placeholder so this
+# archived FastAPI wrapper doesn't fail if someone runs it by accident.
 summarize_with_livekit = None
 
 class Entry(BaseModel):
