@@ -7,6 +7,7 @@
  * 4. Better data message handling
  * 5. Proper TypeScript types
  * 6. Cleaner state management
+ * 7. Use LiveKit's BarVisualizer instead of custom visualizer
  */
 
 "use client";
@@ -20,9 +21,11 @@ import {
   RoomAudioRenderer,
   useDataChannel,
   useTracks,
+  BarVisualizer,
+  useTranscriptions,
 } from "@livekit/components-react";
 import { Track, RoomEvent } from "livekit-client";
-import type { Room, RemoteParticipant } from "livekit-client";
+import type { Room } from "livekit-client";
 import TranscriptPanel, { Entry } from "./TranscriptPanel";
 import { saveInterview } from "../lib/history";
 import SummaryModal from "./SummaryModal";
@@ -205,63 +208,22 @@ function DebugPanel() {
 
 
 // ============================================================================
-// HOOK: LiveKit Transcript (built-in, no need for manual tracking)
+// HOOK: LiveKit's useTranscriptions (built-in transcript tracking)
 // ============================================================================
 
 function useInterviewTranscript() {
-  const [entries, setEntries] = React.useState<Entry[]>([]);
-  const room = useRoomContext();
-
-  React.useEffect(() => {
-    if (!room) return;
-
-    // LiveKit emits transcription events
-    const handleTranscription = (
-        transcription: unknown,
-        participant?: RemoteParticipant
-      ) => {
-      // transcription may come as a string or an object depending on LiveKit version/provider
-      let text = '';
-      if (!transcription) text = '';
-      else if (typeof transcription === 'string') text = transcription;
-      else if (typeof transcription === 'object') {
-        // common shapes: { text }, { transcript }, { segments: [...] }
-        const tObj = transcription as Record<string, unknown>;
-        if (typeof tObj.text === 'string') text = String(tObj.text);
-        else if (typeof tObj.transcript === 'string') text = String(tObj.transcript);
-        else if (Array.isArray(tObj.segments)) {
-          // join segments if present
-          try {
-            text = (tObj.segments as unknown[]).map((s) => String(((s as Record<string, unknown>)['text']) || ((s as Record<string, unknown>)['content']) || '')).join(' ');
-          } catch {
-            text = String(transcription);
-          }
-        } else {
-          text = String(transcription);
-        }
-      } else {
-        text = String(transcription);
-      }
-
-      const who = participant ? 'AI' : 'User';
-      if (!text) return;
-      setEntries((prev) => [
-        ...prev,
-        {
-          who,
-          text,
-          ts: Date.now(),
-        },
-      ]);
-    };
-
-    // Some LiveKit versions use different event names
-  room.on(RoomEvent.TranscriptionReceived as never, handleTranscription as never);
+  const transcriptions = useTranscriptions();
+  
+  // Convert LiveKit transcriptions to our Entry format
+  const entries = React.useMemo(() => {
+    if (!transcriptions || transcriptions.length === 0) return [];
     
-    return () => {
-      room.off(RoomEvent.TranscriptionReceived as never, handleTranscription as never);
-    };
-  }, [room]);
+    return transcriptions.map((transcription) => ({
+      who: transcription.participant?.identity ? 'AI' : 'User',
+      text: transcription.segments.map(s => s.text).join(' ') || '',
+      ts: Date.now(),
+    }));
+  }, [transcriptions]);
 
   return entries;
 }
@@ -392,205 +354,18 @@ function InterviewControls({
 }
 
 // ============================================================================
-// COMPONENT: Audio Visualizer
-// - Prejoin variant uses navigator.mediaDevices.getUserMedia so it can run
-//   before joining a LiveKit Room (no LiveKit hooks required).
-// - In-room variant uses LiveKit's `useTracks` hook and must be rendered
-//   inside a `LiveKitRoom` provider.
+// COMPONENT: Static Microphone Icon for Pre-join
 // ============================================================================
 
-function AudioVisualizerInRoom() {
-  const canvasRef = React.useRef<HTMLCanvasElement>(null);
-  const audioContextRef = React.useRef<AudioContext | null>(null);
-  const analyserRef = React.useRef<AnalyserNode | null>(null);
-  
-  // This component must only be used inside a LiveKitRoom provider
-  const tracks = useTracks([Track.Source.Microphone]);
-  
-  React.useEffect(() => {
-    const audioTrack = tracks.find((t) => t.source === Track.Source.Microphone);
-    // audioTrack can have different shapes depending on SDK versions; attempt common access patterns
-    let mediaStreamTrack: MediaStreamTrack | null = null;
-    try {
-      const at = audioTrack as unknown as Record<string, unknown>;
-      if (at?.track && typeof at.track === 'object') {
-        mediaStreamTrack = ((at.track as Record<string, unknown>)['mediaStreamTrack']) as MediaStreamTrack | undefined ?? null;
-      } else {
-        mediaStreamTrack = ((at as Record<string, unknown>)['mediaStreamTrack']) as MediaStreamTrack | undefined ?? null;
-      }
-    } catch {
-      mediaStreamTrack = null;
-    }
-    if (!mediaStreamTrack) return;
-
-    try {
-      const AudioContextClass = window.AudioContext || (window as never)['webkitAudioContext'];
-      const ctx = new AudioContextClass();
-      const stream = new MediaStream([mediaStreamTrack]);
-      const source = ctx.createMediaStreamSource(stream);
-      const analyser = ctx.createAnalyser();
-      analyser.fftSize = 2048;
-      source.connect(analyser);
-
-      audioContextRef.current = ctx;
-      analyserRef.current = analyser;
-
-      let animationId: number;
-      const dataArray = new Uint8Array(analyser.frequencyBinCount);
-
-      const draw = () => {
-        const canvas = canvasRef.current;
-        if (!canvas || !analyserRef.current) {
-          animationId = requestAnimationFrame(draw);
-          return;
-        }
-
-        const ctx2 = canvas.getContext('2d');
-        if (!ctx2) {
-          animationId = requestAnimationFrame(draw);
-          return;
-        }
-
-        analyserRef.current!.getByteTimeDomainData(dataArray);
-
-        ctx2.fillStyle = 'rgb(17, 24, 39)';
-        ctx2.fillRect(0, 0, canvas.width, canvas.height);
-
-        ctx2.lineWidth = 2;
-        ctx2.strokeStyle = 'rgb(6, 182, 212)';
-        ctx2.beginPath();
-
-        const sliceWidth = canvas.width / dataArray.length;
-        let x = 0;
-
-        for (let i = 0; i < dataArray.length; i++) {
-          const v = dataArray[i] / 128.0;
-          const y = (v * canvas.height) / 2;
-
-          if (i === 0) ctx2.moveTo(x, y);
-          else ctx2.lineTo(x, y);
-
-          x += sliceWidth;
-        }
-
-        ctx2.stroke();
-        animationId = requestAnimationFrame(draw);
-      };
-
-      animationId = requestAnimationFrame(draw);
-
-      return () => {
-        cancelAnimationFrame(animationId);
-        ctx.close();
-      };
-    } catch (err) {
-      console.error('Failed to set up audio visualizer:', err);
-    }
-  }, [tracks]);
-
+function StaticMicrophoneIcon() {
   return (
-    <canvas ref={canvasRef} width={400} height={100} className="w-full h-20 rounded bg-gray-900" />
+    <div className="w-full h-20 rounded bg-gradient-to-br from-gray-900 to-gray-800 flex items-center justify-center">
+      <div className="text-center">
+        <div className="text-6xl mb-2">🎤</div>
+        <div className="text-sm text-gray-400">Ready to speak</div>
+      </div>
+    </div>
   );
-}
-
-function AudioVisualizerPrejoin() {
-  const canvasRef = React.useRef<HTMLCanvasElement>(null);
-  const audioContextRef = React.useRef<AudioContext | null>(null);
-  const analyserRef = React.useRef<AnalyserNode | null>(null);
-  const mediaStreamRef = React.useRef<MediaStream | null>(null);
-
-  React.useEffect(() => {
-    let mounted = true;
-
-    const setup = async () => {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        if (!mounted) {
-          stream.getTracks().forEach((t) => t.stop());
-          return;
-        }
-
-        mediaStreamRef.current = stream;
-
-        const AudioContextClass = window.AudioContext || (window as never)['webkitAudioContext'];
-        const ctx = new AudioContextClass();
-        const source = ctx.createMediaStreamSource(stream);
-        const analyser = ctx.createAnalyser();
-        analyser.fftSize = 2048;
-        source.connect(analyser);
-
-        audioContextRef.current = ctx;
-        analyserRef.current = analyser;
-
-        let animationId: number;
-        const dataArray = new Uint8Array(analyser.frequencyBinCount);
-
-        const draw = () => {
-          const canvas = canvasRef.current;
-          if (!canvas || !analyserRef.current) {
-            animationId = requestAnimationFrame(draw);
-            return;
-          }
-
-          const ctx2 = canvas.getContext('2d');
-          if (!ctx2) {
-            animationId = requestAnimationFrame(draw);
-            return;
-          }
-
-          analyserRef.current!.getByteTimeDomainData(dataArray);
-
-          ctx2.fillStyle = 'rgb(17, 24, 39)';
-          ctx2.fillRect(0, 0, canvas.width, canvas.height);
-
-          ctx2.lineWidth = 2;
-          ctx2.strokeStyle = 'rgb(6, 182, 212)';
-          ctx2.beginPath();
-
-          const sliceWidth = canvas.width / dataArray.length;
-          let x = 0;
-
-          for (let i = 0; i < dataArray.length; i++) {
-            const v = dataArray[i] / 128.0;
-            const y = (v * canvas.height) / 2;
-
-            if (i === 0) ctx2.moveTo(x, y);
-            else ctx2.lineTo(x, y);
-
-            x += sliceWidth;
-          }
-
-          ctx2.stroke();
-          animationId = requestAnimationFrame(draw);
-        };
-
-        animationId = requestAnimationFrame(draw);
-
-        // cleanup for canvas/analyser
-        return () => {
-          cancelAnimationFrame(animationId);
-          ctx.close();
-        };
-      } catch (err) {
-        console.error('Failed to set up prejoin visualizer:', err);
-      }
-    };
-
-    const cleanupPromise = setup();
-
-    return () => {
-      mounted = false;
-      // stop tracks
-      if (mediaStreamRef.current) {
-        mediaStreamRef.current.getTracks().forEach((t) => t.stop());
-      }
-      // audio context closed in inner cleanup
-      // if setup hasn't finished, ensure we still attempt to close
-      cleanupPromise.catch(() => {});
-    };
-  }, []);
-
-  return <canvas ref={canvasRef} width={400} height={100} className="w-full h-20 rounded bg-gray-900" />;
 }
 
 // ============================================================================
@@ -737,7 +512,7 @@ export default function InterviewRoom({
           </div>
         </div>
 
-  <AudioVisualizerPrejoin />
+        <StaticMicrophoneIcon />
 
         <button
           onClick={joinInterview}
@@ -823,6 +598,10 @@ function InterviewRoomContent({
   const entries = useInterviewTranscript();
   const room = useRoomContext();
   const remotes = useRemoteParticipants();
+  
+  // Get microphone track for visualizer
+  const tracks = useTracks([Track.Source.Microphone]);
+  const microphoneTrack = tracks.find((t) => t.source === Track.Source.Microphone);
 
   // room.state is a string-like state; avoid using the ConnectionState component type here
   const connectionState = room?.state as unknown as string | undefined;
@@ -909,7 +688,15 @@ function InterviewRoomContent({
             </div>
           </div>
 
-          <AudioVisualizerInRoom />
+          {/* LiveKit's built-in audio visualizer */}
+          <div className="my-4">
+            <BarVisualizer 
+              state="speaking"
+              barCount={7}
+              trackRef={microphoneTrack}
+              className="h-20"
+            />
+          </div>
           
           <InterviewControls
             onEndInterview={onEndInterview}

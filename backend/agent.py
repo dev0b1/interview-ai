@@ -89,7 +89,7 @@ class InterviewConfig:
     num_questions: int = 5
     allow_adaptive_questions: bool = True
     company_name: str = "Our Company"
-    job_title: str = "this position"
+    job_title: str = "Software Developer"  # Fixed: Changed from "this position"
     candidate_resume_summary: Optional[str] = None
 
 
@@ -173,6 +173,47 @@ def get_questions_for_config(config: InterviewConfig) -> List[str]:
 
 
 # ==============================
+#     TEXT SANITIZATION
+# ==============================
+def sanitize_for_tts(text: str) -> str:
+    """
+    Clean text for TTS to prevent generation failures.
+    Fixes common grammatical issues and removes problematic formatting.
+    """
+    if not text:
+        return ""
+    
+    # Remove multiple spaces
+    text = ' '.join(text.split())
+    
+    # Fix common grammatical issues
+    text = text.replace("for the this", "for this")
+    text = text.replace("for the the", "for the")
+    text = text.replace("at the the", "at the")
+    text = text.replace("of the the", "of the")
+    text = text.replace("to the the", "to the")
+    
+    # Remove markdown/formatting that might confuse TTS
+    text = text.replace("**", "")
+    text = text.replace("__", "")
+    text = text.replace("###", "")
+    text = text.replace("##", "")
+    text = text.replace("#", "")
+    
+    # Remove extra punctuation
+    text = text.replace("...", ".")
+    text = text.replace("..", ".")
+    text = text.replace("!!", "!")
+    text = text.replace("??", "?")
+    
+    # Ensure proper sentence ending
+    if text and text[-1] not in '.!?':
+        text += '.'
+    
+    return text.strip()
+
+
+# ==============================
 #     SAFE TTS & LLM WRAPPERS
 # ==============================
 @retry_with_logging(max_attempts=3, wait_min=2, wait_max=8)
@@ -189,9 +230,16 @@ async def safe_say(session: AgentSession, text: str, allow_interruptions: bool =
         APIConnectionError: If all retry attempts fail
     """
     try:
-        logger.debug(f"🔊 TTS: {text[:100]}...")
+        # Sanitize text before TTS
+        clean_text = sanitize_for_tts(text)
+        
+        if not clean_text:
+            logger.warning("⚠️ Empty text after sanitization, skipping TTS")
+            return
+        
+        logger.debug(f"🔊 TTS: {clean_text[:100]}...")
         await asyncio.wait_for(
-            session.say(text, allow_interruptions=allow_interruptions),
+            session.say(clean_text, allow_interruptions=allow_interruptions),
             timeout=30.0  # 30 second timeout for TTS
         )
         logger.debug("✅ TTS completed successfully")
@@ -204,6 +252,54 @@ async def safe_say(session: AgentSession, text: str, allow_interruptions: bool =
     except Exception as e:
         logger.error(f"❌ Unexpected TTS error: {e}")
         raise APIConnectionError(f"Unexpected TTS error: {e}")
+
+
+async def safe_say_with_chunking(
+    session: AgentSession, 
+    text: str, 
+    allow_interruptions: bool = True, 
+    max_chunk_length: int = 200
+):
+    """
+    Say text with automatic chunking for long utterances.
+    Prevents TTS timeouts on very long text.
+    
+    Args:
+        session: AgentSession instance
+        text: Text to synthesize
+        allow_interruptions: Whether to allow user interruptions
+        max_chunk_length: Maximum characters per chunk
+    """
+    clean_text = sanitize_for_tts(text)
+    
+    if not clean_text:
+        return
+    
+    # If text is short, just say it
+    if len(clean_text) <= max_chunk_length:
+        return await safe_say(session, clean_text, allow_interruptions)
+    
+    # Otherwise, split by sentences
+    sentences = clean_text.replace('!', '.').replace('?', '.').split('.')
+    current_chunk = ""
+    
+    for sentence in sentences:
+        sentence = sentence.strip()
+        if not sentence:
+            continue
+            
+        # If adding this sentence exceeds limit, speak current chunk first
+        if len(current_chunk) + len(sentence) > max_chunk_length:
+            if current_chunk:
+                await safe_say(session, current_chunk, allow_interruptions)
+                await asyncio.sleep(0.3)  # Brief pause between chunks
+            current_chunk = sentence + ". "
+        else:
+            current_chunk += sentence + ". "
+    
+    # Speak remaining chunk
+    if current_chunk:
+        await safe_say(session, current_chunk, allow_interruptions)
 
 
 @retry_with_logging(max_attempts=3, wait_min=1, wait_max=5)
@@ -409,9 +505,7 @@ async def end_interview(ctx: RunContext):
     ai_feedback = await _generate_feedback(summary, interview_ctx.config, ctx.session)
     _save_results(interview_ctx, summary, ai_feedback)
 
-    # Publish final results to LiveKit data channel so the frontend (InterviewRoom)
-    # can receive the summary/feedback in-room. We attempt to publish on
-    # `interview_results` first and fall back to `agent-messages` for older clients.
+    # Publish final results to LiveKit data channel
     try:
         room = getattr(ctx, "room", None) or getattr(getattr(ctx, "session", None), "room", None)
         if room and getattr(room, "local_participant", None):
@@ -427,7 +521,6 @@ async def end_interview(ctx: RunContext):
             try:
                 await room.local_participant.publish_data(payload, topic="interview_results")
             except Exception:
-                # Older clients listen on `agent-messages` topic — try that as a fallback.
                 try:
                     await room.local_participant.publish_data(payload, topic="agent-messages")
                 except Exception as e:
@@ -437,14 +530,20 @@ async def end_interview(ctx: RunContext):
     except Exception as e:
         logger.warning(f"Failed to publish interview results to data channel: {e}")
 
-    # Attempt to upsert results to the Next.js server so the interview detail page
-    # can display results outside the LiveKit room. This uses a shared secret and
-    # the AGENT_UPSERT_URL env var (e.g. https://app.example.com/api/interviews/upsert-results).
+    # Attempt to upsert results to the Next.js server
     try:
         upsert_url = os.getenv('AGENT_UPSERT_URL')
         upsert_secret = os.getenv('AGENT_UPSERT_SECRET')
         if upsert_url and upsert_secret:
             async def _post_results():
+                room_metadata = {}
+                try:
+                    room = getattr(ctx, "room", None) or getattr(getattr(ctx, "session", None), "room", None)
+                    if room and hasattr(room, 'metadata'):
+                        room_metadata = json.loads(room.metadata or '{}')
+                except:
+                    pass
+                
                 payload = {
                     'interviewId': getattr(interview_ctx, 'interview_id', None) or os.getenv('INTERVIEW_ID') or None,
                     'analysis': summary.get('user_summary'),
@@ -465,14 +564,13 @@ async def end_interview(ctx: RunContext):
                 except Exception as e:
                     logger.warning(f"Exception posting upsert results: {e}")
 
-            # fire-and-forget but don't block the end_interview flow
             asyncio.create_task(_post_results())
         else:
             logger.debug('AGENT_UPSERT_URL or AGENT_UPSERT_SECRET not configured; skipping results upsert')
     except Exception as e:
         logger.warning(f"Failed to initiate results upsert: {e}")
 
-    # Use safe_say with retry logic
+    # Use safe_say with chunking for feedback delivery
     try:
         await safe_say(
             ctx.session,
@@ -487,7 +585,8 @@ async def end_interview(ctx: RunContext):
             allow_interruptions=False
         )
         
-        await safe_say(ctx.session, ai_feedback, allow_interruptions=False)
+        # Use chunking for potentially long feedback
+        await safe_say_with_chunking(ctx.session, ai_feedback, allow_interruptions=False)
         
     except Exception as e:
         logger.error(f"❌ Error delivering feedback: {e}")
@@ -632,12 +731,8 @@ def _save_results(ctx: InterviewContext, summary: dict, feedback: str):
         
         logger.info(f"📊 Internal metrics saved: {internal_filepath}")
         
-        # In production: Send internal_metrics to monitoring service
-        # e.g., Sentry, DataDog, CloudWatch, etc.
-        
     except Exception as e:
         logger.error(f"❌ Failed to save results: {e}")
-        # In production, queue this for retry or alert monitoring
 
 
 # ==============================
@@ -718,21 +813,31 @@ class InterviewerAgent(Agent):
         ctx = self.interview_ctx
         
         try:
-            # 1. Greet the candidate with retry logic
-            greeting = (
-                f"Hello {ctx.candidate_name}! Welcome to your {ctx.config.interview_type.value} interview "
-                f"for the {ctx.config.job_title} role at {ctx.config.company_name}. "
-                f"I'm excited to learn more about you today. Let's begin!"
-            )
+            # 1. Create greeting with proper grammar handling
+            job_title = ctx.config.job_title
             
+            # Handle edge cases for job_title
+            if not job_title or job_title.lower() in ["this position", "the position", "position"]:
+                greeting = (
+                    f"Hello {ctx.candidate_name}! Welcome to your {ctx.config.interview_type.value} interview "
+                    f"at {ctx.config.company_name}. I'm excited to learn more about you today. Let's begin!"
+                )
+            else:
+                greeting = (
+                    f"Hello {ctx.candidate_name}! Welcome to your {ctx.config.interview_type.value} interview "
+                    f"for the {job_title} role at {ctx.config.company_name}. "
+                    f"I'm excited to learn more about you today. Let's begin!"
+                )
+            
+            # 2. Greet the candidate with retry logic
             await safe_say(self.session, greeting, allow_interruptions=True)
             ctx.tts_retry_count = 0  # Reset on success
             
-            # 2. Set to first question
+            # 3. Set to first question
             ctx.question_index = 0
             first_question = ctx.core_questions[0] if ctx.core_questions else "Tell me about yourself."
             
-            # 3. Ask the first question with retry logic
+            # 4. Ask the first question with retry logic
             await safe_say(self.session, first_question, allow_interruptions=True)
             
             logger.info(f"✅ Interview started: Asked question 1/{len(ctx.core_questions)}")
@@ -795,7 +900,7 @@ async def entrypoint(ctx: JobContext):
         num_questions=int(room_metadata.get('num_questions', os.getenv('NUM_QUESTIONS', 5))),
         allow_adaptive_questions=room_metadata.get('allow_adaptive', True),
         company_name=room_metadata.get('company_name', os.getenv('COMPANY_NAME', 'Our Company')),
-        job_title=room_metadata.get('job_title', os.getenv('JOB_TITLE', 'this position')),
+        job_title=room_metadata.get('job_title', os.getenv('JOB_TITLE', 'Software Developer')),
         candidate_resume_summary=room_metadata.get('resume_summary'),
     )
     
@@ -821,8 +926,7 @@ async def entrypoint(ctx: JobContext):
     )
 
     session = AgentSession(
-        # VAD disabled: Using Deepgram's built-in endpointing
-        # If you experience interruption issues, enable Silero VAD:
+        # VAD configuration for better interruption handling
         vad=silero.VAD.load(min_silence_duration=0.6),
         stt="deepgram/nova-2:en",
         llm=llm_instance,
