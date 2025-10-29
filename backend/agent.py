@@ -19,7 +19,7 @@ from livekit.agents import (
     function_tool,
 )
 from livekit.agents.llm import ChatContext, ChatMessage
-from livekit.plugins import silero, openai
+from livekit.plugins import silero, openai, deepgram
 import aiohttp
 
 # Import retry utilities
@@ -924,16 +924,24 @@ async def entrypoint(ctx: JobContext):
         api_key=os.getenv("OPENROUTER_API_KEY"),
         base_url="https://openrouter.ai/api/v1",
     )
-
+    stt_provider = deepgram.STT(
+        model="nova-2",
+        language="en",
+        interim_results=True,     # Send partial transcripts
+        endpointing_ms=1500,         # 1.5 seconds silence = end of speech (processed on Deepgram servers!)
+        smart_format=True,
+        punctuate=True,
+    )
     session = AgentSession(
         # VAD configuration for better interruption handling
         vad=silero.VAD.load(min_silence_duration=0.6),
-        stt="deepgram/nova-2:en",
+        stt=stt_provider,
         llm=llm_instance,
-        tts="cartesia/sonic-2:79a125e8-cd45-4c13-8a67-188112f4dd22",
+        tts="elevenlabs/eleven_turbo_v2:pNInz6obpgDQGcFmaJgB",
         userdata=interview_ctx,
         min_endpointing_delay=0.5,
         max_endpointing_delay=2.0,
+    
     )
 
     agent = InterviewerAgent(interview_ctx=interview_ctx)
