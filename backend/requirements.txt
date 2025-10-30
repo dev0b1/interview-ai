@@ -5,6 +5,8 @@
 # livekit-agents[silero,turn-detector]~=1.2
 livekit-agents
 livekit-plugins-openai
+livekit-plugins-elevenlabs
+livekit-plugins-deepgram
 # livekit-plugins-noise-cancellation~=0.2
 
 # Core LLM/STT/TTS SDKs
