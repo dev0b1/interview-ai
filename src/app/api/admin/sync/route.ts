@@ -13,11 +13,11 @@ async function checkAdminToken(req: Request) {
   if (!finalToken) return false;
 
   try {
-    const { data: userData, error: userErr } = await supabase.auth.getUser(finalToken);
-    if (userErr || !userData?.user) return false;
-    const user = userData.user;
-    if (user.user_metadata && (user.user_metadata as any).is_admin) return true;
-    const adminsEnv = process.env.ADMIN_ADMINS || '';
+  const { data: userData, error: userErr } = await supabase.auth.getUser(finalToken);
+  if (userErr || !userData?.user) return false;
+  const user = userData.user;
+  if (isUserAdmin(user)) return true;
+  const adminsEnv = process.env.ADMIN_ADMINS || '';
     const adminEmails = adminsEnv.split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
     const userEmail = (user.email || '').toLowerCase();
     if (adminEmails.length > 0 && userEmail && adminEmails.includes(userEmail)) return true;
@@ -26,6 +26,20 @@ async function checkAdminToken(req: Request) {
     console.warn('admin token check failed', e);
     return false;
   }
+}
+
+function isUserAdmin(user: { user_metadata?: unknown; email?: string | null } | null | undefined) {
+  if (!user) return false;
+  try {
+    const meta = user.user_metadata;
+    if (meta && typeof meta === 'object') {
+      const val = (meta as Record<string, unknown>)['is_admin'];
+      return val === true || val === 'true' || val === 1;
+    }
+  } catch (e) {
+    // ignore
+  }
+  return false;
 }
 
 export async function GET(req: Request) {

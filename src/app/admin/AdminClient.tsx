@@ -20,6 +20,17 @@ type Interview = {
 
 export default function AdminClient() {
   const { session } = useAuth();
+  function getAccessToken(sess: unknown): string | null {
+    if (!sess || typeof sess !== 'object') return null;
+    const s = sess as Record<string, unknown>;
+    // Supabase client may expose token at access_token or in a nested data.session.access_token
+    const direct = s['access_token'] ?? s['accessToken'];
+    if (typeof direct === 'string' && direct) return direct;
+    const data = s['data'] as Record<string, unknown> | undefined;
+    const nested = data?.['session'] && (data?.['session'] as Record<string, unknown>)['access_token'];
+    if (typeof nested === 'string' && nested) return nested;
+    return null;
+  }
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [query, setQuery] = useState('');
   const [interviews, setInterviews] = useState<Interview[]>([]);
@@ -35,8 +46,8 @@ export default function AdminClient() {
     setLoading(true);
     try {
       const headers: Record<string, string> = {};
-      if (session && (session as any).access_token)
-        headers['authorization'] = `Bearer ${(session as any).access_token}`;
+      const token = getAccessToken(session);
+      if (token) headers['authorization'] = `Bearer ${token}`;
       const url = '/api/admin/users' + (q ? `?q=${encodeURIComponent(q)}` : '');
       const res = await fetch(url, { headers, credentials: 'same-origin' });
       const j = await res.json();
@@ -54,8 +65,8 @@ export default function AdminClient() {
     setLoading(true);
     try {
       const headers: Record<string, string> = {};
-      if (session && (session as any).access_token)
-        headers['authorization'] = `Bearer ${(session as any).access_token}`;
+      const token2 = getAccessToken(session);
+      if (token2) headers['authorization'] = `Bearer ${token2}`;
       const res = await fetch(`/api/admin/interviews?user_id=${encodeURIComponent(userId)}`, {
         headers,
         credentials: 'same-origin',
@@ -82,9 +93,9 @@ export default function AdminClient() {
     // load minimal stats when the client mounts
     (async () => {
       try {
-        const headers: Record<string, string> = {};
-        if (session && (session as any).access_token)
-          headers['authorization'] = `Bearer ${(session as any).access_token}`;
+                        const headers: Record<string, string> = {};
+                        const token3 = getAccessToken(session);
+                        if (token3) headers['authorization'] = `Bearer ${token3}`;
         const res = await fetch('/api/admin/stats', { headers, credentials: 'same-origin' });
         if (!res.ok) return;
         const j = await res.json();

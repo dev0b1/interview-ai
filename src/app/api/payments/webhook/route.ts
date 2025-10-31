@@ -1,7 +1,8 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { supabase } from '@/lib/supabaseClient';
+
+const asRecord = (x: unknown): Record<string, unknown> | null => (x && typeof x === 'object') ? x as Record<string, unknown> : null;
 
 // Billing-style webhook: Paddle Billing sends JSON with an HMAC-style 'paddle-signature' header
 function verifySignature(raw: string, signatureHeader: string | null) {
@@ -35,30 +36,34 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    let event: any;
+    let event: unknown;
     try {
-      event = JSON.parse(raw);
+      event = JSON.parse(raw) as unknown;
     } catch {
       console.warn('Failed to parse Paddle Billing webhook JSON');
       return NextResponse.json({ ok: false, error: 'invalid json' }, { status: 400 });
     }
 
-    const type = String(event.event_type ?? event.type ?? 'unknown');
-    const data = event.data ?? event; // Billing wraps payload in data
+    const evt = asRecord(event) ?? {};
+    const type = String(evt['event_type'] ?? evt['type'] ?? 'unknown');
+    const data = asRecord(evt['data']) ?? evt; // Billing wraps payload in data
 
-    // Persist raw event for auditing
+    // Persist raw event for auditing (best-effort)
     try {
-      await supabase.from('payments').insert({ id: event.id ?? undefined, provider: 'paddle_billing', raw: event, status: type });
+      await supabase.from('payments').insert({ id: evt['id'] ?? undefined, provider: 'paddle_billing', raw: evt, status: type });
     } catch {
       // ignore persistence errors
     }
 
     // Persist event to subscription_events for history (if possible)
     try {
-      const evId = event.id ?? event.event_id ?? `${type}-${Date.now()}`;
-      const subId = data.subscription?.id ?? data.subscription_id ?? data.subscriptionId ?? data.subscription ?? null;
-      const userId = (data.custom_data?.userId ?? data.custom_data?.user_id ?? data.custom_data?.user) || (data.transaction?.custom_data?.userId ?? data.transaction?.custom_data?.user_id ?? null) || null;
-      await supabase.from('subscription_events').insert({ id: String(evId), subscription_id: subId || undefined, user_id: userId || undefined, event_type: type, event_time: new Date().toISOString(), payload: event });
+      const evId = evt['id'] ?? evt['event_id'] ?? `${type}-${Date.now()}`;
+      const dRec = asRecord(data) ?? {};
+      const subId = dRec['subscription'] && typeof dRec['subscription'] === 'object' ? ((dRec['subscription'] as Record<string, unknown>)['id']) : (dRec['subscription_id'] ?? dRec['subscriptionId'] ?? dRec['subscription'] ?? null);
+      const custom = asRecord(dRec['custom_data']);
+      const txCustom = (dRec['transaction'] && typeof dRec['transaction'] === 'object') ? asRecord((dRec['transaction'] as Record<string, unknown>)['custom_data']) : undefined;
+      const userId = (custom && (custom['userId'] ?? custom['user_id'] ?? custom['user'])) ?? (txCustom && (txCustom['userId'] ?? txCustom['user_id'])) ?? null;
+      await supabase.from('subscription_events').insert({ id: String(evId), subscription_id: subId || undefined, user_id: userId || undefined, event_type: type, event_time: new Date().toISOString(), payload: evt });
     } catch {
       // ignore
     }
@@ -75,12 +80,14 @@ export async function POST(req: NextRequest) {
 
     try {
       if (type === 'transaction.completed' || type === 'transaction.success' || type === 'transaction.created') {
-        const tx = data.transaction ?? data;
-        const txId = String(tx.id ?? tx.transaction_id ?? tx.id ?? '');
-        const amount = Number(tx.amount ?? tx.gross ?? tx.total ?? 0);
-        const currency = String(tx.currency ?? tx.currency_code ?? '');
-        const custom = tx.custom_data ?? tx.custom_data ?? {};
-        const userId = custom?.userId ?? custom?.user_id ?? custom?.user ?? tx.customer?.id ?? tx.customer_id ?? undefined;
+  const dRec = asRecord(data) ?? {};
+  const txRec = (dRec['transaction'] && typeof dRec['transaction'] === 'object') ? asRecord(dRec['transaction']) ?? {} : dRec;
+  const txId = String(txRec['id'] ?? txRec['transaction_id'] ?? txRec['id'] ?? '');
+  const amount = Number(txRec['amount'] ?? txRec['gross'] ?? txRec['total'] ?? 0);
+  const currency = String(txRec['currency'] ?? txRec['currency_code'] ?? '');
+  const custom = asRecord(txRec['custom_data']) ?? {};
+  const customerObj = asRecord(txRec['customer']) ?? {};
+  const userId = custom['userId'] ?? custom['user_id'] ?? custom['user'] ?? customerObj['id'] ?? txRec['customer_id'] ?? undefined;
 
         // idempotency: if payment already succeeded, skip
         if (txId) {
@@ -94,23 +101,24 @@ export async function POST(req: NextRequest) {
 
         // upsert payment
         try {
-          await supabase.from('payments').upsert({ id: txId || undefined, user_id: userId || undefined, raw: JSON.stringify(event), status: type, amount, currency }, { returning: 'minimal' });
+          await supabase.from('payments').upsert({ id: txId || undefined, user_id: userId || undefined, raw: JSON.stringify(evt), status: type, amount, currency }, { returning: 'minimal' });
         } catch {}
 
         // If transaction is for a subscription or a Pro price, handle profile/subscription
         try {
-          const items = Array.isArray(tx.items) ? tx.items : (tx.line_items ?? []);
-          const first = items && items.length ? items[0] : null;
-          const priceId = first?.priceId ?? first?.price_id ?? first?.product_id ?? undefined;
+          const items = Array.isArray(txRec['items']) ? txRec['items'] : (txRec['line_items'] ?? []);
+          const first = items && (Array.isArray(items) ? items[0] as Record<string, unknown> : null);
+          const priceId = first ? (first['priceId'] ?? first['price_id'] ?? first['product_id']) : undefined;
           const PRO_PRODUCT_ID = process.env.NEXT_PUBLIC_PRO_PRODUCT_ID || '';
           const PRO_PRICE = process.env.NEXT_PUBLIC_PRO_PRICE || '';
           const isPro = (PRO_PRODUCT_ID && priceId && priceId === PRO_PRODUCT_ID) || (PRO_PRICE && String(amount) && String(amount) === PRO_PRICE);
 
           // If subscription info present, upsert subscriptions
-          const subscription = tx.subscription ?? tx.subscription_id ?? tx.subscriptionId ?? tx.subscription?.id ?? null;
-          if (subscription || tx.is_subscription || tx.subscription_id) {
-            const subId = String(subscription ?? tx.subscription_id ?? tx.subscriptionId ?? (tx.subscription && tx.subscription.id) ?? '');
-            const nextBill = tx.next_billed_at ?? tx.next_billed_at ?? tx.next_payment_date ?? (tx.subscription && tx.subscription.current_billing_period?.ends_at) ?? null;
+          const subscription = txRec['subscription'] ?? txRec['subscription_id'] ?? txRec['subscriptionId'] ?? (txRec['subscription'] && (txRec['subscription'] as Record<string, unknown>)['id']) ?? null;
+          if (subscription || txRec['is_subscription'] || txRec['subscription_id']) {
+            const subId = String(subscription ?? txRec['subscription_id'] ?? txRec['subscriptionId'] ?? ((txRec['subscription'] && (txRec['subscription'] as Record<string, unknown>)['id']) ?? '') ?? '');
+            const nextBillRaw = txRec['next_billed_at'] ?? txRec['next_payment_date'] ?? ((txRec['subscription'] && (txRec['subscription'] as Record<string, unknown>)['current_billing_period'] && ((txRec['subscription'] as Record<string, unknown>)['current_billing_period'] as Record<string, unknown>)['ends_at']) ?? null) ?? null;
+            const nextBill = nextBillRaw ? String(nextBillRaw) : null;
             const subRow: any = {
               id: subId || undefined,
               user_id: userId || undefined,
@@ -118,7 +126,7 @@ export async function POST(req: NextRequest) {
               subscription_id: subId || undefined,
               product_id: priceId ?? undefined,
               status: 'active',
-              raw: JSON.stringify(event),
+              raw: JSON.stringify(evt),
             };
             if (nextBill) {
               try { subRow.next_bill_date = new Date(String(nextBill)).toISOString(); } catch {}
@@ -133,7 +141,7 @@ export async function POST(req: NextRequest) {
               }
             }
           } else if (isPro && userId) {
-            const expiresAt = computeExpiryFrom(tx.next_billed_at ?? null);
+            const expiresAt = computeExpiryFrom(txRec['next_billed_at'] ? String(txRec['next_billed_at']) : null);
             try { await supabase.from('profiles').update({ pro: true, pro_expires_at: expiresAt }).eq('id', userId).select(); } catch {
               try { await supabase.from('profiles').upsert({ id: userId, pro: true, pro_expires_at: expiresAt }, { returning: 'minimal' }); } catch {}
             }
@@ -142,21 +150,25 @@ export async function POST(req: NextRequest) {
           console.warn('failed to handle transaction pro/subscription mapping', _e);
         }
       } else if (type === 'subscription.created' || type === 'subscription.updated' || type === 'subscription.canceled' || type === 'subscription.deleted') {
-        const sub = data.subscription ?? data;
-        const subId = String(sub.id ?? sub.subscription_id ?? sub.subscriptionId ?? '');
-        const status = String(sub.status ?? sub.state ?? 'active');
-        const userId = sub.custom_data?.userId ?? sub.custom_data?.user_id ?? sub.custom_data?.user ?? undefined;
-        const nextBill = sub.next_billed_at ?? sub.current_billing_period?.ends_at ?? null;
-        const cancelAt = sub.cancellation_effective_at ?? sub.scheduled_for ?? sub.cancel_at ?? null;
+        const dRec = asRecord(data) ?? {};
+        const subRec = asRecord(dRec['subscription']) ?? dRec;
+        const subId = String(subRec['id'] ?? subRec['subscription_id'] ?? subRec['subscriptionId'] ?? '');
+        const status = String(subRec['status'] ?? subRec['state'] ?? 'active');
+        const custom = asRecord(subRec['custom_data']);
+        const userId = custom && (custom['userId'] ?? custom['user_id'] ?? custom['user']) ? (custom['userId'] ?? custom['user_id'] ?? custom['user']) : undefined;
+        const nextBillRaw = subRec['next_billed_at'] ?? (subRec['current_billing_period'] && (subRec['current_billing_period'] as Record<string, unknown>)['ends_at']) ?? null;
+        const nextBill = nextBillRaw ? String(nextBillRaw) : null;
+        const cancelAtRaw = subRec['cancellation_effective_at'] ?? subRec['scheduled_for'] ?? subRec['cancel_at'] ?? null;
+        const cancelAt = cancelAtRaw ? String(cancelAtRaw) : null;
 
         const subRow: any = {
           id: subId || undefined,
           user_id: userId || undefined,
           provider: 'paddle_billing',
           subscription_id: subId || undefined,
-          product_id: sub.price_id ?? sub.plan_id ?? sub.product_id ?? undefined,
+          product_id: subRec['price_id'] ?? subRec['plan_id'] ?? subRec['product_id'] ?? undefined,
           status: status,
-          raw: JSON.stringify(event),
+          raw: JSON.stringify(evt),
         };
         if (nextBill) {
           try { subRow.next_bill_date = new Date(String(nextBill)).toISOString(); } catch {}
@@ -194,15 +206,18 @@ export async function POST(req: NextRequest) {
           }
         }
       } else if (type === 'transaction.payment_failed' || type === 'transaction.failed') {
-        const tx = data.transaction ?? data;
-        const txId = String(tx.id ?? tx.transaction_id ?? '');
-        const userId = tx.custom_data?.userId ?? tx.custom_data?.user_id ?? tx.customer?.id ?? undefined;
+        const dRec = asRecord(data) ?? {};
+        const txRec = (dRec['transaction'] && typeof dRec['transaction'] === 'object') ? asRecord(dRec['transaction']) ?? {} : dRec;
+        const txId = String(txRec['id'] ?? txRec['transaction_id'] ?? '');
+        const custom = asRecord(txRec['custom_data']) ?? {};
+        const customerObj = asRecord(txRec['customer']) ?? {};
+        const userId = custom['userId'] ?? custom['user_id'] ?? customerObj['id'] ?? undefined;
         // upsert payment with failed status
-        try { await supabase.from('payments').upsert({ id: txId || undefined, user_id: userId || undefined, raw: JSON.stringify(event), status: type }, { returning: 'minimal' }); } catch {}
+        try { await supabase.from('payments').upsert({ id: txId || undefined, user_id: userId || undefined, raw: JSON.stringify(evt), status: type }, { returning: 'minimal' }); } catch {}
         // Optionally mark subscription as past_due
-        const subId = String(tx.subscription_id ?? tx.subscriptionId ?? tx.subscription?.id ?? '');
+        const subId = String(txRec['subscription_id'] ?? txRec['subscriptionId'] ?? ((txRec['subscription'] && (txRec['subscription'] as Record<string, unknown>)['id']) ?? '') ?? '');
         if (subId) {
-          try { await supabase.from('subscriptions').update({ status: 'past_due', raw: JSON.stringify(event) }).eq('subscription_id', subId); } catch {}
+          try { await supabase.from('subscriptions').update({ status: 'past_due', raw: JSON.stringify(evt) }).eq('subscription_id', subId); } catch {}
         }
       } else {
         // Unhandled event types are fine; we stored raw event above

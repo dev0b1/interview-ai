@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { supabase } from '@/lib/supabaseClient';
@@ -49,7 +48,8 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ received: true });
   } catch (err: unknown) {
-    console.error('Paddle Billing webhook error', (err as any)?.message || err);
-    return NextResponse.json({ error: String((err as any)?.message || err) }, { status: 500 });
+    const msg = (err as any)?.message ?? String(err);
+    console.error('Paddle Billing webhook error', msg);
+    return NextResponse.json({ error: String(msg) }, { status: 500 });
   }
 }

@@ -562,13 +562,7 @@ export default function InterviewPage() {
   }, [session]);
 
   // Connect to room immediately on mount
-  React.useEffect(() => {
-    if (session?.access_token && !token && !connecting) {
-      void connectToRoom();
-    }
-  }, [session, token, connecting]);
-
-  const connectToRoom = async () => {
+  const connectToRoom = React.useCallback(async () => {
     if (!session?.access_token) {
       router.push("/auth");
       return;
@@ -604,7 +598,14 @@ export default function InterviewPage() {
     } finally {
       setConnecting(false);
     }
-  };
+  }, [session?.access_token, userName, selectedRole, selectedPersonality, router]);
+
+  // Connect to room immediately on mount
+  React.useEffect(() => {
+    if (session?.access_token && !token && !connecting) {
+      void connectToRoom();
+    }
+  }, [session, token, connecting, connectToRoom]);
 
   const handleStartInterview = () => {
     setIsInterviewStarted(true);

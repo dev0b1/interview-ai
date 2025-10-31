@@ -13,10 +13,10 @@ async function checkAdminToken(req: Request) {
   if (!finalToken) return false;
 
   try {
-    const { data: userData, error: userErr } = await supabase.auth.getUser(finalToken);
-    if (userErr || !userData?.user) return false;
-    const user = userData.user;
-    if (user.user_metadata && (user.user_metadata as any).is_admin) return true;
+  const { data: userData, error: userErr } = await supabase.auth.getUser(finalToken);
+  if (userErr || !userData?.user) return false;
+  const user = userData.user;
+  if (isUserAdmin(user)) return true;
     const { data: profile, error: pErr } = await supabase.from('profiles').select('is_admin').eq('id', user.id).single();
     if (!pErr && profile?.is_admin) return true;
     // Env-based admin list
@@ -29,6 +29,20 @@ async function checkAdminToken(req: Request) {
     console.warn('admin token check failed', e);
     return false;
   }
+}
+
+function isUserAdmin(user: { user_metadata?: unknown; email?: string | null } | null | undefined) {
+  if (!user) return false;
+  try {
+    const meta = user.user_metadata;
+    if (meta && typeof meta === 'object') {
+      const val = (meta as Record<string, unknown>)['is_admin'];
+      return val === true || val === 'true' || val === 1;
+    }
+  } catch (e) {
+    // ignore
+  }
+  return false;
 }
 
 export async function GET(req: Request) {

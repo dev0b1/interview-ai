@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 declare module '@paddle/paddle-node-sdk' {
   export enum Environment {
     sandbox = 'sandbox',

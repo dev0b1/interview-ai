@@ -21,9 +21,9 @@ async function checkAdminToken(req: Request) {
   try {
     const { data: userData, error: userErr } = await supabase.auth.getUser(finalToken);
     if (userErr || !userData?.user) return false;
-    const user = userData.user;
-    // user metadata or env check
-    if (user.user_metadata && (user.user_metadata as any).is_admin) return true;
+  const user = userData.user;
+  // user metadata or env check (safe access without `any`)
+  if (isUserAdmin(user)) return true;
     const adminsEnv = process.env.ADMIN_ADMINS || '';
     const adminEmails = adminsEnv.split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
     const userEmail = (user.email || '').toLowerCase();
@@ -33,6 +33,20 @@ async function checkAdminToken(req: Request) {
     console.warn('admin token check failed', e);
     return false;
   }
+}
+
+function isUserAdmin(user: { user_metadata?: unknown; email?: string | null } | null | undefined) {
+  if (!user) return false;
+  try {
+    const meta = user.user_metadata;
+    if (meta && typeof meta === 'object') {
+      const val = (meta as Record<string, unknown>)['is_admin'];
+      return val === true || val === 'true' || val === 1;
+    }
+  } catch (e) {
+    // ignore
+  }
+  return false;
 }
 
 export async function GET(req: Request) {
@@ -52,9 +66,11 @@ export async function GET(req: Request) {
     try {
       const pRes = await supabase.from('profiles').select('id, email');
       if (!pRes.error && Array.isArray(pRes.data)) {
-        (pRes.data as any[]).forEach(r => {
-          if (r.id) userIds.add(String(r.id));
-          if (r.email) userEmails.add(String(r.email).toLowerCase());
+        (pRes.data as Array<Record<string, unknown>>).forEach((r) => {
+          const id = r['id'];
+          const email = r['email'];
+          if (id) userIds.add(String(id));
+          if (email) userEmails.add(String(email).toLowerCase());
         });
         profilesCount = pRes.data.length;
       }
@@ -68,9 +84,11 @@ export async function GET(req: Request) {
     try {
       const uRes = await supabase.from('users').select('id, email');
       if (!uRes.error && Array.isArray(uRes.data)) {
-        (uRes.data as any[]).forEach(r => {
-          if (r.id) userIds.add(String(r.id));
-          if (r.email) userEmails.add(String(r.email).toLowerCase());
+        (uRes.data as Array<Record<string, unknown>>).forEach((r) => {
+          const id = r['id'];
+          const email = r['email'];
+          if (id) userIds.add(String(id));
+          if (email) userEmails.add(String(email).toLowerCase());
         });
         publicUsersCount = uRes.data.length;
       }
@@ -84,10 +102,11 @@ export async function GET(req: Request) {
     try {
       const ivRes = await supabase.from('interviews').select('owner').limit(10000);
       if (!ivRes.error && Array.isArray(ivRes.data)) {
-        (ivRes.data as any[]).forEach(r => {
-          if (r.owner) userIds.add(String(r.owner));
+        (ivRes.data as Array<Record<string, unknown>>).forEach((r) => {
+          const owner = r['owner'];
+          if (owner) userIds.add(String(owner));
         });
-        interviewOwnersCount = Array.from(new Set((ivRes.data || []).map((r: any) => r.owner).filter(Boolean))).length;
+        interviewOwnersCount = Array.from(new Set((ivRes.data || []).map((r: Record<string, unknown>) => r['owner']).filter(Boolean))).length;
       }
     } catch {
       // ignore
@@ -100,16 +119,36 @@ export async function GET(req: Request) {
       try {
         // supabase.auth.admin.listUsers() or supabase.auth.listUsers()
         // handle multiple possible shapes
-        // @ts-ignore
-        const list = await (supabase.auth.admin?.listUsers ? supabase.auth.admin.listUsers() : (supabase.auth.listUsers ? supabase.auth.listUsers() : Promise.resolve(null)));
-        if (list && (list as any).data) {
-          const users = (list as any).data.users ?? (list as any).data;
-          if (Array.isArray(users)) {
-            users.forEach((u: any) => {
-              if (u.id) userIds.add(String(u.id));
-              if (u.email) userEmails.add(String(u.email).toLowerCase());
+        // call admin/listUsers if available; handle multiple shapes safely
+        const authObj = supabase.auth as unknown as Record<string, unknown>;
+        let list: unknown = null;
+        try {
+          const adminObj = authObj['admin'] as Record<string, unknown> | undefined;
+          if (adminObj && typeof adminObj['listUsers'] === 'function') {
+            list = await (adminObj['listUsers'] as unknown as () => Promise<unknown>)();
+          } else if (typeof authObj['listUsers'] === 'function') {
+            list = await (authObj['listUsers'] as unknown as () => Promise<unknown>)();
+          }
+        } catch (err) {
+          list = null;
+        }
+
+        if (list && typeof list === 'object') {
+          const dataObj = (list as Record<string, unknown>)['data'];
+          let usersArr: Array<Record<string, unknown>> | null = null;
+          if (dataObj && typeof dataObj === 'object' && Array.isArray((dataObj as any).users)) {
+            usersArr = (dataObj as any).users as Array<Record<string, unknown>>;
+          } else if (Array.isArray(dataObj)) {
+            usersArr = dataObj as Array<Record<string, unknown>>;
+          }
+          if (usersArr && Array.isArray(usersArr)) {
+            usersArr.forEach((u) => {
+              const id = u['id'];
+              const email = u['email'];
+              if (id) userIds.add(String(id));
+              if (email) userEmails.add(String(email).toLowerCase());
             });
-            authUsersCount = users.length;
+            authUsersCount = usersArr.length;
           }
         }
       } catch (e) {
@@ -141,9 +180,9 @@ export async function GET(req: Request) {
     try {
       // attempt to sum amounts for payments with status='paid' or count subscriptions
       const paymentsRes = await supabase.from('payments').select('amount, status');
-      if (!paymentsRes.error && paymentsRes.data) {
-        const paid = (paymentsRes.data as any[]).filter(p => (p.status || '').toLowerCase() === 'paid');
-        totalRevenue = paid.reduce((s, p) => s + Number(p.amount || 0), 0);
+      if (!paymentsRes.error && Array.isArray(paymentsRes.data)) {
+        const paid = (paymentsRes.data as Array<Record<string, unknown>>).filter((p) => String((p['status'] || '')).toLowerCase() === 'paid');
+        totalRevenue = paid.reduce((s, p) => s + Number(p['amount'] || 0), 0);
       }
     } catch {
       totalRevenue = 0;

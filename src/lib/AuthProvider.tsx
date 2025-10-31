@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
@@ -6,13 +5,36 @@ import { usePathname, useRouter } from 'next/navigation';
 import Loading from '../components/Loading';
 import { createClient, SupabaseClient, Session, User } from '@supabase/supabase-js';
 
+const asRecord = (x: unknown): Record<string, unknown> | null => (x && typeof x === 'object') ? x as Record<string, unknown> : null;
+
+function getSessionFromResp(resp: unknown): Session | null {
+  const r = asRecord(resp);
+  if (!r) return null;
+  // supabase auth.getSession() returns { data: { session } }
+  const data = asRecord(r['data']);
+  if (data && data['session']) return data['session'] as Session;
+  // If a Session-like object was passed directly, accept it
+  if (r['access_token'] || r['user']) return resp as Session;
+  return null;
+}
+
+function getUserFromSessionObj(sess: unknown): User | null {
+  const sRec = asRecord(sess);
+  if (!sRec) return null;
+  const userObj = sRec['user'] ?? sRec['user'];
+  const uRec = asRecord(userObj);
+  if (!uRec) return null;
+  return (uRec as unknown) as User;
+
+}
+
 type AuthContextShape = {
   supabase: SupabaseClient | null;
   user: User | null;
   session: Session | null;
   signOut: () => Promise<void>;
   initializing: boolean;
-  signInWithOAuth: (opts: { provider: string; options?: any }) => Promise<any>;
+  signInWithOAuth: (opts: { provider: string; options?: Record<string, unknown> }) => Promise<unknown>;
 };
 
 const AuthContext = createContext<AuthContextShape | undefined>(undefined);
@@ -38,23 +60,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     let mounted = true;
     async function init() {
-    try {
-      const s = await supabase.auth.getSession();
-      const sess = (s as any)?.data?.session ?? null;
+      try {
+        const s = await supabase.auth.getSession();
+        const sess = getSessionFromResp(s);
         if (!mounted) return;
         setSession(sess);
-        setUser((sess as any)?.user ?? null);
+        setUser(getUserFromSessionObj(sess));
         // Ensure a public `profiles` row exists for this auth user so admin stats
         // and profile-driven features work without manual migrations.
         try {
-          const authUser = (sess as any)?.user ?? null;
+          const authUser = getUserFromSessionObj(sess);
           if (authUser && authUser.id) {
-            const displayName = (authUser.user_metadata && (authUser.user_metadata as any).full_name) || authUser.user_metadata?.name || null;
+            const meta = asRecord((authUser as unknown as Record<string, unknown>)['user_metadata']) ?? {};
+            const displayName = (meta['full_name'] ?? meta['name']) ?? null;
             // best-effort upsert (anon key may be allowed depending on RLS)
-            // don't block UI on this operation
             (async () => {
               try {
-                await (supabase as any).from('profiles').upsert({ id: authUser.id, email: authUser.email, display_name: displayName }, { returning: 'minimal' });
+                await (supabase as unknown as SupabaseClient).from('profiles').upsert({ id: authUser.id, email: authUser.email, display_name: displayName }, { returning: 'minimal' });
               } catch {
                 // ignore profile sync errors in client
               }
@@ -65,8 +87,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
         // set a non-HttpOnly cookie with the access token so server middleware can read it
         try {
-          if (sess && (sess as any).access_token) {
-            const token = (sess as any).access_token as string;
+          const sessRec = getSessionFromResp(sess as unknown) ? (sess as unknown as Record<string, unknown>) : null;
+          const token = sessRec ? (sessRec['access_token'] as string | undefined) : undefined;
+          if (sess && token) {
             // derive max-age from token exp if possible
             try {
               const parts = token.split('.');
@@ -83,7 +106,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 document.cookie = `sb_access_token=${token}; Path=/; SameSite=Lax`;
               }
             } catch {
-              document.cookie = `sb_access_token=${(sess as any).access_token}; Path=/; SameSite=Lax`;
+              // ignore cookie parse errors
             }
           } else {
             // clear cookie when no session
@@ -95,18 +118,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         // Listen for changes
         const { data: listener } = supabase.auth.onAuthStateChange((event, s) => {
-          const nextSession = (s as any) ?? null;
+          const nextSession = s as Session | null;
           setSession(nextSession);
-          setUser((nextSession as any)?.user ?? null);
+          setUser(getUserFromSessionObj(nextSession));
 
           // on sign-in events, ensure profiles upsert
           try {
-            const authUser = (nextSession as any)?.user ?? null;
+            const authUser = getUserFromSessionObj(nextSession);
             if (authUser && authUser.id) {
-              const displayName = (authUser.user_metadata && (authUser.user_metadata as any).full_name) || authUser.user_metadata?.name || null;
+              const meta = asRecord((authUser as unknown as Record<string, unknown>)['user_metadata']) ?? {};
+              const displayName = (meta['full_name'] ?? meta['name']) ?? null;
               (async () => {
                 try {
-                  await (supabase as any).from('profiles').upsert({ id: authUser.id, email: authUser.email, display_name: displayName }, { returning: 'minimal' });
+                  await (supabase as unknown as SupabaseClient).from('profiles').upsert({ id: authUser.id, email: authUser.email, display_name: displayName }, { returning: 'minimal' });
                 } catch {
                   // ignore
                 }
@@ -145,13 +169,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  async function signInWithOAuth(opts: { provider: string; options?: any }) {
+  async function signInWithOAuth(opts: { provider: string; options?: Record<string, unknown> }) {
     if (!supabase) return null;
     try {
-      // delegate to supabase client
-      return await (supabase as SupabaseClient).auth.signInWithOAuth(opts as any);
+      // supabase client types can be strict; cast in a small localized way
+      return await (supabase as unknown as SupabaseClient).auth.signInWithOAuth(opts as any);
     } catch (err) {
-      // bubble up a minimal error shape
       return { error: err };
     }
   }

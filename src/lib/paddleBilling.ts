@@ -4,7 +4,6 @@
   - Exposes minimal methods used by server routes: createTransaction, getSubscription, cancelSubscription
   - If the SDK isn't installed or PADDLE_BILLING_API_KEY not set, methods will throw a clear error.
 */
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { Paddle, Environment, TransactionsCreateRequest } from '@paddle/paddle-node-sdk';
 
 let paddleClient: Paddle | null = null;

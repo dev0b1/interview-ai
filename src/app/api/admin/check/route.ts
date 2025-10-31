@@ -1,6 +1,20 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabaseClient';
 
+function isUserAdmin(user: { user_metadata?: unknown; email?: string | null } | null | undefined) {
+  if (!user) return false;
+  try {
+    const meta = user.user_metadata;
+    if (meta && typeof meta === 'object') {
+      const val = (meta as Record<string, unknown>)['is_admin'];
+      return val === true || val === 'true' || val === 1;
+    }
+  } catch (e) {
+    // ignore
+  }
+  return false;
+}
+
 export async function GET(req: Request) {
   // No local bypass: require token-based admin or env/service checks
 
@@ -21,11 +35,11 @@ export async function GET(req: Request) {
     const { data: userData, error: userErr } = await supabase.auth.getUser(token);
     if (userErr || !userData?.user) return NextResponse.json({ error: 'invalid token' }, { status: 401 });
 
-    const user = userData.user;
+  const user = userData.user;
 
-    // Check user metadata first
-    const isAdminFromMeta = !!(user.user_metadata && (user.user_metadata as any).is_admin);
-    if (isAdminFromMeta) return NextResponse.json({ ok: true, isAdmin: true });
+  // Check user metadata first
+  const isAdminFromMeta = isUserAdmin(user);
+  if (isAdminFromMeta) return NextResponse.json({ ok: true, isAdmin: true });
 
     // Fallback: check profiles table (may not have is_admin column if migrations weren't run)
     try {

@@ -24,8 +24,7 @@ function uuidv4(): string {
 
 type CreateBody = { amount?: string; currency?: string; product_id?: string };
 
-// keep explicit any allowed in this file for the minimal UUID helper
-
+  // keep explicit any allowed in this file for the minimal UUID helper
 export async function POST(req: NextRequest) {
   try {
     const { amount = '10.00', currency = 'USD', product_id = '' } = (await req.json()) as CreateBody;
@@ -61,8 +60,6 @@ export async function POST(req: NextRequest) {
           customData: { userId: passthrough },
           checkoutSettings: { successUrl: `${base.replace(/\/$/, '')}/settings?payment=success` },
         };
-  // SDK expects any; disable the lint rule for this third-party call
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const tx = await createTransaction(payload as any);
         // tx shape depends on SDK; attempt to return common fields
         const transactionId = tx?.id ?? tx?.transaction?.id ?? tx?.data?.id;
