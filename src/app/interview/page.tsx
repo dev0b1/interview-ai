@@ -351,13 +351,6 @@ function InterviewControls({
           ⏹ End Interview
         </button>
 
-        <button
-          onClick={() => window.location.reload()}
-          className="px-4 py-2 bg-gradient-to-r from-red-600 to-rose-600 text-white rounded-md transition font-medium shadow-[0_6px_20px_rgba(239,68,68,0.08)] hover:brightness-105"
-        >
-          Leave & End Interview
-        </button>
-
         {!isRecording ? (
           <button
             onClick={startRecording}
@@ -702,10 +695,13 @@ export default function InterviewPage() {
           date: new Date().toISOString(),
         });
       }
+
+      return resp.token;
     } catch (err) {
       console.error("Connection failed:", err);
       alert(`Failed to connect: ${err instanceof Error ? err.message : "Unknown error"}`);
       setToken(null);
+      return null;
     } finally {
       setConnecting(false);
     }
@@ -716,25 +712,20 @@ export default function InterviewPage() {
   // only when the user explicitly starts the interview.
 
   const handleStartInterview = async () => {
-    // If we're already connected, just flip the started flag.
-    if (token) {
-      setIsInterviewStarted(true);
-      return;
-    }
+    // If we're already started, no-op
+    if (isInterviewStarted) return;
 
-    // Otherwise, connect first and then start the interview when token is ready.
     try {
-      await connectToRoom();
-      // connectToRoom sets token/interviewId on success
+      // If token already present, we can start immediately
       if (token) {
         setIsInterviewStarted(true);
-      } else {
-        // In some cases, connectToRoom updates state asynchronously; ensure we set started
-        // after a short tick if token became available.
-        setTimeout(() => {
-          if (!isInterviewStarted && token) setIsInterviewStarted(true);
-        }, 250);
+        return;
       }
+
+      // Otherwise attempt to connect and start only after token is received
+      const t = await connectToRoom();
+      if (t) setIsInterviewStarted(true);
+      else throw new Error('Failed to obtain token');
     } catch (err) {
       console.error('Failed to start interview:', err);
       alert('Failed to start interview. See console for details.');
@@ -742,8 +733,10 @@ export default function InterviewPage() {
   };
 
   const handleEndInterview = () => {
-    // Show summary or just reset
+    // Unmount the live room and clear token/interview id so the room is fully torn down
     setIsInterviewStarted(false);
+    setToken(null);
+    setInterviewId(null);
   };
 
   if (initializing) {
@@ -800,69 +793,80 @@ export default function InterviewPage() {
         animate={{ opacity: 1, y: 0 }}
         className="bg-white rounded-2xl shadow-lg p-6"
       >
-        <LiveKitRoom
-          token={token}
-          serverUrl={process.env.NEXT_PUBLIC_LIVEKIT_URL}
-          connect={true}
-          audio={true}
-          video={false}
-          options={{
-            dynacast: true,
-            adaptiveStream: true,
-            audioCaptureDefaults: {
-              echoCancellation: true,
-              noiseSuppression: true,
-              autoGainControl: true,
-            },
-          }}
-          onDisconnected={() => {
-            setToken(null);
-            setIsInterviewStarted(false);
-          }}
-        >
-          <InterviewRoomContent
-            name={userName}
-            topic={selectedRole}
-            interviewId={interviewId}
-            isInterviewStarted={isInterviewStarted}
-            onStartInterview={handleStartInterview}
-            onEndInterview={handleEndInterview}
-            connecting={connecting}
-          />
-
-          {/* Role and Personality Dropdowns - Only show before interview starts */}
-          {!isInterviewStarted && (
-            <div className="mt-6 pt-6 border-t">
-                  <div className="grid grid-cols-1 md:grid-cols-1 gap-4 mb-4">
-                    <div>
-                      <label className="block text-sm font-medium mb-2">Interview Role</label>
-                      <select
-                        value={selectedRole}
-                        onChange={(e) => setSelectedRole(e.target.value)}
-                        className="w-full px-4 py-2 border-2 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent bg-white"
-                      >
-                        {INTERVIEW_ROLES.map((role) => (
-                          <option key={role.id} value={role.id}>
-                            {role.label}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
+        {/* If the interview has not started, show the pre-join setup UI */}
+        {!isInterviewStarted ? (
+          <div className="flex flex-col gap-6">
+            <div className="text-center">
+              <h2 className="text-xl font-semibold">🎯 Interview Setup</h2>
+              <p className="text-sm text-gray-500 mt-2">Select your role and click Start to join the live interview room. The AI agent will join only after you start.</p>
             </div>
-          )}
 
-          {/* Start/Control Buttons - Reduced spacing */}
-          <div className={isInterviewStarted ? "mt-4" : "mt-4"}>
-            <InterviewControls
+            <div className="grid grid-cols-1 md:grid-cols-1 gap-4 mb-4">
+              <div>
+                <label className="block text-sm font-medium mb-2">Interview Role</label>
+                <select
+                  value={selectedRole}
+                  onChange={(e) => setSelectedRole(e.target.value)}
+                  className="w-full px-4 py-2 border-2 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent bg-white"
+                >
+                  {INTERVIEW_ROLES.map((role) => (
+                    <option key={role.id} value={role.id}>
+                      {role.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="flex justify-center">
+              <button onClick={handleStartInterview} disabled={connecting} className="px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg font-semibold text-lg hover:scale-105 transform transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_8px_30px_rgba(99,102,241,0.08)]">
+                {connecting ? 'Connecting…' : '🚀 Start Interview'}
+              </button>
+            </div>
+          </div>
+        ) : (
+          /* Mount the live room only after user has started */
+          <LiveKitRoom
+            token={token}
+            serverUrl={process.env.NEXT_PUBLIC_LIVEKIT_URL}
+            connect={true}
+            audio={true}
+            video={false}
+            options={{
+              dynacast: true,
+              adaptiveStream: true,
+              audioCaptureDefaults: {
+                echoCancellation: true,
+                noiseSuppression: true,
+                autoGainControl: true,
+              },
+            }}
+            onDisconnected={() => {
+              setToken(null);
+              setIsInterviewStarted(false);
+            }}
+          >
+            <InterviewRoomContent
+              name={userName}
+              topic={selectedRole}
+              interviewId={interviewId}
               isInterviewStarted={isInterviewStarted}
               onStartInterview={handleStartInterview}
               onEndInterview={handleEndInterview}
-              interviewId={interviewId}
-              disabled={connecting}
+              connecting={connecting}
             />
-          </div>
-        </LiveKitRoom>
+
+            <div className={isInterviewStarted ? "mt-4" : "mt-4"}>
+              <InterviewControls
+                isInterviewStarted={isInterviewStarted}
+                onStartInterview={handleStartInterview}
+                onEndInterview={handleEndInterview}
+                interviewId={interviewId}
+                disabled={connecting}
+              />
+            </div>
+          </LiveKitRoom>
+        )}
       </motion.div>
     </div>
   );
