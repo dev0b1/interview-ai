@@ -1,6 +1,5 @@
 /**
- * Single Page Interview - Everything visible from start
- * Dropdowns under the video card, Start button toggles to control buttons
+ * Real-time Interview with AI Agent - Updated UI
  */
 
 "use client";
@@ -62,8 +61,6 @@ const INTERVIEW_ROLES = [
   { id: "general", label: "General Interview" },
 ];
 
-// Roast mode only - no personality selection needed
-
 // ============================================================================
 // HOOKS
 // ============================================================================
@@ -75,6 +72,7 @@ function useAgentMessages() {
   const [confidence, setConfidence] = React.useState<number | null>(null);
   const [professionalism, setProfessionalism] = React.useState<number | null>(null);
   const [roastMessages, setRoastMessages] = React.useState<string[]>([]);
+  const [fillerWords, setFillerWords] = React.useState<number>(0);
 
   const { message: msgAgent } = useDataChannel("agent-messages");
   const { message: msgInterview } = useDataChannel("interview_results");
@@ -90,7 +88,7 @@ function useAgentMessages() {
 
         const type = data?.type || data?.event || null;
 
-  switch (type) {
+        switch (type) {
           case "agent.greeting":
             setGreeting(data.text as string || data.message as string);
             break;
@@ -116,18 +114,15 @@ function useAgentMessages() {
 
           case "agent.behavior_flag":
             setBehaviorFlags((prev) => [...prev, ...(data.issues as string[] || [])]);
-            // also push a brief roast message if provided
             if ((data as Record<string, unknown>)['message']) {
               setRoastMessages((r) => [String((data as Record<string, unknown>)['message']), ...r].slice(0, 5));
             }
             break;
 
           case "agent.post_interview_summary":
-            // Extract potential numeric metrics if present
             const metricsRec = (data as Record<string, unknown>)['metrics'] as Record<string, unknown> | undefined;
             const conf = metricsRec ? Number(metricsRec['confidence'] as number ?? metricsRec['clarity'] as number ?? NaN) : NaN;
             const prof = metricsRec ? Number(metricsRec['professionalism'] as number ?? NaN) : NaN;
-            // Agent metrics are usually 0-100; convert to 0-10 scale for UI consistency
             if (!Number.isNaN(conf)) setConfidence(Math.round(conf / 10));
             if (!Number.isNaN(prof)) setProfessionalism(Math.round(prof / 10));
             setSummary({
@@ -150,7 +145,7 @@ function useAgentMessages() {
 
     process(msgAgent);
     process(msgInterview);
-    // live metrics channel: lightweight numeric updates
+    
     try {
       if (msgLiveMetrics) {
         const mv = msgLiveMetrics as { payload?: Uint8Array };
@@ -159,8 +154,10 @@ function useAgentMessages() {
         if (d) {
           const confRaw = Number(d['confidence_score'] ?? d['confidence'] ?? NaN);
           const profRaw = Number(d['professionalism_score'] ?? d['professionalism'] ?? NaN);
+          const fillerRaw = Number(d['filler_words'] ?? d['filler_word_count'] ?? NaN);
           if (!Number.isNaN(confRaw)) setConfidence(Math.round(confRaw / 10));
           if (!Number.isNaN(profRaw)) setProfessionalism(Math.round(profRaw / 10));
+          if (!Number.isNaN(fillerRaw)) setFillerWords(fillerRaw);
           if (d['ai_feedback']) setRoastMessages((r) => [String(d['ai_feedback']), ...r].slice(0, 5));
         }
       }
@@ -169,7 +166,7 @@ function useAgentMessages() {
     }
   }, [msgAgent, msgInterview, msgLiveMetrics]);
 
-  return { greeting, summary, behaviorFlags, setGreeting, confidence, professionalism, roastMessages };
+  return { greeting, summary, behaviorFlags, setGreeting, confidence, professionalism, roastMessages, fillerWords };
 }
 
 function useInterviewTranscript(): Entry[] {
@@ -252,16 +249,12 @@ function InterviewConfigPublisher({
 
 function InterviewControls({
   isInterviewStarted,
-  onStartInterview,
   onEndInterview,
   interviewId,
-  disabled,
 }: {
   isInterviewStarted: boolean;
-  onStartInterview: () => void;
   onEndInterview: () => void;
   interviewId?: string | null;
-  disabled?: boolean;
 }) {
   const { localParticipant } = useLocalParticipant();
   const [isMuted, setIsMuted] = React.useState(false);
@@ -322,58 +315,34 @@ function InterviewControls({
     }
   };
 
-  if (!isInterviewStarted) {
-    return (
-      <button
-        onClick={onStartInterview}
-        disabled={disabled}
-        className="w-full px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg font-semibold text-lg hover:scale-105 transform transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_8px_30px_rgba(99,102,241,0.08)]"
-      >
-        🚀 Start Interview
-      </button>
-    );
-  }
+  if (!isInterviewStarted) return null;
 
   return (
-    <div className="space-y-3">
-      <div className="flex flex-wrap gap-2">
+    <div className="flex flex-wrap gap-3 justify-center">
+      {!isRecording ? (
         <button
-          onClick={toggleMute}
-          className={`px-4 py-2 rounded-md transition font-medium ${isMuted ? 'bg-red-600 text-white' : 'bg-gray-800 text-white'} shadow-md hover:brightness-105`}
+          onClick={startRecording}
+          className="px-6 py-3 bg-indigo-600 text-white rounded-lg transition font-semibold shadow-lg hover:bg-indigo-700 flex items-center gap-2"
         >
-          {isMuted ? "🔇 Unmute" : "🎤 Mute"}
+          <span className="w-3 h-3 bg-white rounded-full"></span>
+          Record
         </button>
-        
+      ) : (
         <button
-          onClick={onEndInterview}
-          className="px-4 py-2 bg-gradient-to-r from-amber-500 to-amber-600 text-white rounded-md transition font-medium shadow-[0_6px_20px_rgba(245,158,11,0.08)] hover:brightness-105"
+          onClick={stopRecording}
+          className="px-6 py-3 bg-indigo-600 text-white rounded-lg transition font-semibold shadow-lg hover:bg-indigo-700 flex items-center gap-2"
         >
-          ⏹ End Interview
+          <span className="w-3 h-3 bg-red-500 rounded-sm animate-pulse"></span>
+          Recording...
         </button>
-
-        {!isRecording ? (
-          <button
-            onClick={startRecording}
-            className="px-4 py-2 bg-gradient-to-r from-blue-600 to-cyan-500 text-white rounded-md transition font-medium shadow-[0_8px_30px_rgba(59,130,246,0.08)] hover:brightness-105"
-          >
-            ⏺ Record
-          </button>
-        ) : (
-          <button
-            onClick={stopRecording}
-            className="px-4 py-2 bg-gradient-to-r from-sky-700 to-blue-800 text-white rounded-md transition font-medium shadow-[0_8px_30px_rgba(14,165,233,0.06)] hover:brightness-105"
-          >
-            ⏹ Stop Recording
-          </button>
-        )}
-      </div>
-
-      {isRecording && (
-        <div className="flex items-center gap-2 px-3 py-2 bg-red-50 text-red-700 rounded-md text-sm">
-          <span className="animate-pulse text-red-500">●</span>
-          <span className="font-medium">Recording</span>
-        </div>
       )}
+      
+      <button
+        onClick={onEndInterview}
+        className="px-6 py-3 bg-gray-800 text-white rounded-lg transition font-semibold shadow-lg hover:bg-gray-700"
+      >
+        End Interview
+      </button>
     </div>
   );
 }
@@ -383,49 +352,26 @@ function InterviewRoomContent({
   topic,
   interviewId,
   isInterviewStarted,
-  onStartInterview,
   onEndInterview,
-  connecting,
 }: {
   name: string;
   topic: string;
   interviewId?: string | null;
   isInterviewStarted: boolean;
-  onStartInterview: () => void;
   onEndInterview: () => void;
-  connecting?: boolean;
 }) {
-  const { greeting, summary, behaviorFlags, setGreeting, confidence, professionalism, roastMessages } = useAgentMessages();
+  const { greeting, summary, behaviorFlags, setGreeting, confidence, professionalism, roastMessages, fillerWords } = useAgentMessages();
   const entries = useInterviewTranscript();
   const room = useRoomContext();
   const remotes = useRemoteParticipants();
   const { localParticipant } = useLocalParticipant();
   const tracks = useTracks([Track.Source.Microphone]);
   const microphoneTrack = tracks.find((t) => t.source === Track.Source.Microphone);
-  const [showTranscript, setShowTranscript] = React.useState(false);
   const [showSummary, setShowSummary] = React.useState(false);
-  // UI polish: small pulse triggers for animated number feedback
-  const [confPulse, setConfPulse] = React.useState(false);
-  const [profPulse, setProfPulse] = React.useState(false);
-
-  React.useEffect(() => {
-    if (confidence === null) return;
-    setConfPulse(true);
-    const t = setTimeout(() => setConfPulse(false), 300);
-    return () => clearTimeout(t);
-  }, [confidence]);
-
-  React.useEffect(() => {
-    if (professionalism === null) return;
-    setProfPulse(true);
-    const t = setTimeout(() => setProfPulse(false), 300);
-    return () => clearTimeout(t);
-  }, [professionalism]);
 
   const connectionState = room?.state as unknown as string | undefined;
   const isConnected = connectionState === 'connected' || connectionState === 'Connected';
 
-  // When summary is received from agent, show it
   React.useEffect(() => {
     if (summary && isInterviewStarted) {
       setShowSummary(true);
@@ -434,10 +380,8 @@ function InterviewRoomContent({
 
   return (
     <>
-      {/* Only render audio from remote participants (not local) */}
       <RoomAudioRenderer />
       
-      {/* Send config when interview starts */}
       {isInterviewStarted && localParticipant && (
         <InterviewConfigPublisher
           name={name}
@@ -448,171 +392,103 @@ function InterviewRoomContent({
       )}
 
       {/* Header */}
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-xl font-semibold">
-          {isInterviewStarted ? "🎤 Interview in Progress" : "🎯 Interview Setup"}
-        </h2>
-        <div className="flex items-center gap-3">
-          <div
-            className={`px-3 py-1 rounded-full text-sm font-medium ${
-              isConnected
-                ? "bg-green-100 text-green-700"
-                : "bg-yellow-100 text-yellow-700"
-            }`}
-          >
-            {isConnected ? "● Connected" : "○ Connecting..."}
-          </div>
-          <div className="text-sm text-gray-600 font-medium">
-            {remotes.length > 0 ? "AI Agent Active" : "Waiting for agent..."}
-          </div>
+      <div className="flex items-center justify-between mb-6">
+        <h2 className="text-xl font-semibold text-white">Analysis Mode: Active</h2>
+        <div className="flex items-center gap-2">
+          <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+          <span className="text-gray-300 text-sm">Connected</span>
         </div>
-        
       </div>
 
-      {/* Agent greeting */}
-      {greeting && (
-        <div className="mb-4 p-4 bg-blue-50 border-l-4 border-blue-500 rounded">
-          <div className="flex items-start justify-between">
-            <div>
-              <div className="font-medium text-blue-900">Agent says:</div>
-              <div className="text-blue-800">{greeting}</div>
-            </div>
-            <button
-              onClick={() => setGreeting(null)}
-              className="text-blue-600 hover:text-blue-800 font-bold"
-            >
-              ✕
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Behavior flags */}
-      {behaviorFlags.length > 0 && (
-        <div className="mb-4 p-3 bg-amber-50 border-l-4 border-amber-500 rounded">
-          <div className="font-medium text-amber-900">⚠️ Areas to improve:</div>
-          <ul className="mt-2 space-y-1">
-            {behaviorFlags.map((flag, i) => (
-              <li key={i} className="text-sm text-amber-800">
-                • {flag}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {/* Main content */}
+      {/* Main Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-  <div className="lg:col-span-2">
-          {/* Roast Arena — Pro Practice Mode Card */}
-          <div className="aspect-video bg-gradient-to-br from-gray-900/80 to-[#0f0520] rounded-lg flex items-center justify-center p-6">
-            <div className="w-full max-w-2xl mx-auto text-white grid grid-cols-1 md:grid-cols-3 gap-6 items-center">
-              {/* Left: progress indicator */}
-              <div className="md:col-span-3">
-                <div className="flex items-center justify-between mb-3">
-                  <div className="text-sm text-gray-300">Question {Math.min(5, (behaviorFlags.length || 0) + 1)} of 5</div>
-                  <div className="text-sm text-gray-400">Roast Intensity</div>
-                </div>
-                <div className="w-full h-2 bg-white/10 rounded-full overflow-hidden">
-                  {(() => {
-                    const total = 5;
-                    const current = Math.min(total, Math.max(1, (behaviorFlags.length || 0) + 1));
-                    const pct = Math.round((current / total) * 100);
-                    const color = pct > 75 ? 'bg-red-500' : pct > 50 ? 'bg-orange-400' : 'bg-blue-400';
-                    return <div className={`${color} h-2`} style={{ width: `${pct}%` }} />;
-                  })()}
-                </div>
-              </div>
-
-              {/* Avatar & metrics */}
-              <div className="flex flex-col items-center md:col-span-1">
-                <div className="w-36 h-36 rounded-full bg-gradient-to-br from-[#6ee7ff]/30 via-[#9b5cff]/20 to-[#7c3aed]/30 flex items-center justify-center text-5xl mb-4 shadow-lg ring-1 ring-white/10">
-                  🤖
-                </div>
-                <div className="w-full text-center">
-                  <div className="text-sm text-gray-300">Confidence Score</div>
-                  <motion.div
-                    animate={confPulse ? { scale: 1.06 } : { scale: 1 }}
-                    transition={{ duration: 0.18 }}
-                    className="text-xl font-semibold text-white"
-                  >
-                    {confidence !== null ? `${Math.round(confidence)}/10` : (summary?.metrics?.clarity ? `${Math.round((summary.metrics.clarity || 0))}/10` : '8/10')}
-                  </motion.div>
-
-                  {/* animated bar */}
-                  <div className="w-full h-2 bg-white/10 rounded-full overflow-hidden mt-2">
-                    <motion.div
-                      className="h-2 bg-emerald-400 rounded"
-                      animate={{ width: `${((confidence ?? (summary?.metrics?.clarity ?? 8)) as number) * 10}%` }}
-                      transition={{ type: 'tween', duration: 0.6 }}
-                    />
-                  </div>
-                </div>
-
-                <div className="w-full text-center mt-2">
-                  <div className="text-sm text-gray-300">Professionalism</div>
-                  <motion.div
-                    animate={profPulse ? { scale: 1.06 } : { scale: 1 }}
-                    transition={{ duration: 0.18 }}
-                    className="text-xl font-semibold text-white"
-                  >
-                    {professionalism !== null ? `${Math.round(professionalism)}/10` : (summary?.metrics?.confidence ? `${Math.round((summary.metrics.confidence || 0))}/10` : '7/10')}
-                  </motion.div>
-
-                  {/* animated bar */}
-                  <div className="w-full h-2 bg-white/10 rounded-full overflow-hidden mt-2">
-                    <motion.div
-                      className="h-2 bg-sky-400 rounded"
-                      animate={{ width: `${((professionalism ?? (summary?.metrics?.confidence ?? 7)) as number) * 10}%` }}
-                      transition={{ type: 'tween', duration: 0.6 }}
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Center: Roast feedback area */}
-              <div className="md:col-span-2 bg-white/5 rounded-lg p-4 flex flex-col justify-between">
-                <div>
-                  <div className="text-sm text-gray-300 mb-2">Roast Feedback</div>
-                  <div className="min-h-[64px] text-sm text-white/90">
-                    {roastMessages && roastMessages.length ? roastMessages[0] : (summary?.ai_feedback ? summary.ai_feedback : (behaviorFlags && behaviorFlags.length ? behaviorFlags[0] : 'No feedback yet — ace the next one!'))}
-                  </div>
-                </div>
-                <div className="mt-3 text-xs text-gray-400">Live suggestions update after each answer</div>
+        {/* Center: AI Avatar + Audio Viz */}
+        <div className="lg:col-span-2 flex flex-col items-center justify-center">
+          {/* AI Avatar */}
+          <div className="relative mb-8">
+            <div className="w-64 h-64 rounded-full bg-gradient-to-br from-indigo-600 via-purple-600 to-pink-600 flex items-center justify-center shadow-2xl">
+              <div className="w-48 h-48 rounded-full bg-gray-800 flex items-center justify-center">
+                <div className="text-7xl">🤖</div>
               </div>
             </div>
+            {isConnected && remotes.length > 0 && (
+              <div className="absolute -bottom-2 left-1/2 transform -translate-x-1/2 px-4 py-1 bg-green-500 text-white text-sm rounded-full font-medium">
+                AI Agent Active
+              </div>
+            )}
           </div>
 
           {/* Audio Visualizer */}
           {isInterviewStarted && microphoneTrack && (
-            <div className="mt-4">
+            <div className="w-full max-w-md">
               <BarVisualizer 
                 state="speaking"
                 barCount={7}
                 trackRef={microphoneTrack}
-                className="h-20"
+                className="h-24"
+                style={{
+                  '--lk-va-bar-width': '12px',
+                  '--lk-va-bar-gap': '8px',
+                  '--lk-fg': '#ef4444',
+                } as React.CSSProperties}
               />
+              <p className="text-center text-gray-400 text-sm mt-4">
+                Detecting filler words, tone and clarity
+              </p>
             </div>
           )}
+
+          {/* Controls */}
+          <div className="mt-8">
+            <InterviewControls
+              isInterviewStarted={isInterviewStarted}
+              onEndInterview={onEndInterview}
+              interviewId={interviewId}
+            />
+          </div>
         </div>
 
-        <div className="space-y-4">
-          {/* Right-side placeholder for Transcript / Tips toggle (future feature) */}
-          <div className="bg-white/3 rounded-lg p-4 min-h-[160px]">
-            <div className="flex items-center justify-between mb-3">
-              <div className="text-sm font-medium text-gray-200">Transcript / Tips</div>
-              <div className="text-xs text-gray-400">coming soon</div>
+        {/* Right: Metrics Panel */}
+        <div className="bg-gray-800/50 rounded-xl p-6 border border-gray-700">
+          <div className="space-y-6">
+            {/* Filler Words */}
+            <div>
+              <div className="text-gray-400 text-sm mb-1">Filler Words</div>
+              <div className="text-4xl font-bold text-white">{fillerWords}</div>
             </div>
-            <div className="text-sm text-gray-300">Toggle between transcript and bite-sized tips for improvement. This panel will host the transcript, short tips, and targeted practice prompts.</div>
-            <div className="mt-4">
-              <button
-                onClick={() => setShowTranscript(!showTranscript)}
-                className="px-4 py-2 bg-indigo-600 text-white rounded-md shadow-sm hover:brightness-105"
-              >
-                {showTranscript ? "Hide" : "Show"} Transcript
-              </button>
+
+            {/* Confidence */}
+            <div>
+              <div className="text-gray-400 text-sm mb-1">Confidence</div>
+              <div className="text-4xl font-bold text-white">
+                {confidence !== null ? `${confidence}/10` : '8/10'}
+              </div>
             </div>
-            {showTranscript && <div className="mt-3"><TranscriptPanel entries={entries} /></div>}
+
+            {/* Professionalism */}
+            <div>
+              <div className="text-gray-400 text-sm mb-1">Professionalism</div>
+              <div className="text-4xl font-bold text-white">
+                {professionalism !== null ? `${professionalism}/10` : '7/10'}
+              </div>
+            </div>
+
+            {/* Real-time Tips */}
+            <div className="pt-4 border-t border-gray-700">
+              <div className="text-gray-400 text-sm mb-2">Real-time Tips</div>
+              <div className="space-y-2">
+                {roastMessages.length > 0 ? (
+                  roastMessages.slice(0, 2).map((msg, i) => (
+                    <div key={i} className="text-gray-300 text-sm">• {msg}</div>
+                  ))
+                ) : (
+                  <>
+                    <div className="text-gray-300 text-sm">• Speak slower.</div>
+                    <div className="text-gray-300 text-sm">• Avoid "like".</div>
+                  </>
+                )}
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -623,7 +499,6 @@ function InterviewRoomContent({
           summary={summary}
           onClose={() => {
             setShowSummary(false);
-            // Reload page to start fresh
             window.location.reload();
           }}
         />
@@ -640,7 +515,6 @@ export default function InterviewPage() {
   const { session, initializing } = useAuth();
   const router = useRouter();
 
-  // Auth check
   React.useEffect(() => {
     if (!initializing && !session) {
       try {
@@ -651,24 +525,19 @@ export default function InterviewPage() {
     }
   }, [initializing, session, router]);
 
-  // Interview state
   const [selectedRole, setSelectedRole] = React.useState("frontend");
-  // roast-only mode: no personality selection
   const [token, setToken] = React.useState<string | null>(null);
   const [interviewId, setInterviewId] = React.useState<string | null>(null);
   const [connecting, setConnecting] = React.useState(false);
   const [isInterviewStarted, setIsInterviewStarted] = React.useState(false);
-  const [micPrefetched, setMicPrefetched] = React.useState(false);
   const [showEndConfirm, setShowEndConfirm] = React.useState(false);
 
-  // Get user name
   const userName = React.useMemo(() => {
     return session?.user?.user_metadata?.full_name || 
            session?.user?.email || 
            "Candidate";
   }, [session]);
 
-  // Connect to room immediately on mount
   const connectToRoom = React.useCallback(async () => {
     if (!session?.access_token) {
       router.push("/auth");
@@ -710,53 +579,15 @@ export default function InterviewPage() {
     }
   }, [session?.access_token, userName, selectedRole, router]);
 
-  // Safe microphone prefetch: only warm up if permission already granted (no prompt)
-  React.useEffect(() => {
-    let mounted = true;
-    async function prefetch() {
-      if (!('permissions' in navigator) || !('mediaDevices' in navigator)) return;
-      try {
-        // Query microphone permission state. If already granted, warm up getUserMedia to reduce latency later.
-        // Do NOT call getUserMedia if state is 'prompt' to avoid surprising permission popups.
-        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-        // @ts-ignore
-        const p = await navigator.permissions.query({ name: 'microphone' } as PermissionDescriptor);
-        if (!mounted) return;
-        if (p && (p as any).state === 'granted') {
-          try {
-            const s = await navigator.mediaDevices.getUserMedia({ audio: true });
-            // stop immediately to release devices
-            s.getTracks().forEach((t) => t.stop());
-            if (mounted) setMicPrefetched(true);
-          } catch (err) {
-            // ignore
-          }
-        }
-      } catch (err) {
-        // ignore
-      }
-    }
-
-    prefetch();
-    return () => { mounted = false; };
-  }, []);
-
-  // Previously we auto-connected on mount which could cause the AI agent to join
-  // unexpectedly when users interacted with the Start button. Instead, connect
-  // only when the user explicitly starts the interview.
-
   const handleStartInterview = async () => {
-    // If we're already started, no-op
     if (isInterviewStarted) return;
 
     try {
-      // If token already present, we can start immediately
       if (token) {
         setIsInterviewStarted(true);
         return;
       }
 
-      // Otherwise attempt to connect and start only after token is received
       const t = await connectToRoom();
       if (t) setIsInterviewStarted(true);
       else throw new Error('Failed to obtain token');
@@ -767,7 +598,6 @@ export default function InterviewPage() {
   };
 
   const handleEndInterview = () => {
-    // Unmount the live room and clear token/interview id so the room is fully torn down
     setIsInterviewStarted(false);
     setToken(null);
     setInterviewId(null);
@@ -775,20 +605,19 @@ export default function InterviewPage() {
 
   if (initializing) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-lg">Loading...</div>
+      <div className="flex items-center justify-center min-h-screen bg-gray-900">
+        <div className="text-lg text-white">Loading...</div>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 p-6">
       <motion.div
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
-        className="bg-white rounded-2xl shadow-lg p-6"
+        className="max-w-7xl mx-auto"
       >
-        {/* Always render the LiveKitRoom visually, but only connect when the user starts */}
         <LiveKitRoom
           token={token ?? undefined}
           serverUrl={process.env.NEXT_PUBLIC_LIVEKIT_URL}
@@ -814,63 +643,66 @@ export default function InterviewPage() {
             topic={selectedRole}
             interviewId={interviewId}
             isInterviewStarted={isInterviewStarted}
-            onStartInterview={handleStartInterview}
             onEndInterview={() => setShowEndConfirm(true)}
-            connecting={connecting}
           />
-
-          <div className={isInterviewStarted ? "mt-4" : "mt-4"}>
-            <InterviewControls
-              isInterviewStarted={isInterviewStarted}
-              onStartInterview={handleStartInterview}
-              onEndInterview={handleEndInterview}
-              interviewId={interviewId}
-              disabled={connecting}
-            />
-          </div>
         </LiveKitRoom>
+
+        {/* Role Selection - Only visible when interview hasn't started */}
+        {!isInterviewStarted && (
+          <div className="mt-8 bg-gray-800/50 rounded-xl p-6 border border-gray-700">
+            <label className="block text-sm font-medium text-gray-300 mb-3">
+              Select Interview Role
+            </label>
+            <select
+              value={selectedRole}
+              onChange={(e) => setSelectedRole(e.target.value)}
+              className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent mb-4"
+            >
+              {INTERVIEW_ROLES.map((role) => (
+                <option key={role.id} value={role.id}>
+                  {role.label}
+                </option>
+              ))}
+            </select>
+
+            <button
+              onClick={handleStartInterview}
+              disabled={connecting}
+              className="w-full px-6 py-4 bg-indigo-600 text-white rounded-lg font-semibold text-lg hover:bg-indigo-700 transform transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-xl"
+            >
+              {connecting ? 'Connecting…' : '🚀 Start Interview'}
+            </button>
+          </div>
+        )}
 
         {showEndConfirm && (
           <div className="fixed inset-0 z-50 flex items-center justify-center">
-            <div className="absolute inset-0 bg-black/40" onClick={() => setShowEndConfirm(false)} />
-            <div className="bg-white rounded-lg shadow-lg p-6 z-10 w-full max-w-md">
-              <h3 className="text-lg font-semibold mb-2">End interview?</h3>
-              <p className="text-sm text-gray-600 mb-4">Are you sure you want to end the interview? This will disconnect you from the room.</p>
-              <div className="flex gap-2 justify-end">
-                <button onClick={() => setShowEndConfirm(false)} className="px-4 py-2 bg-gray-100 rounded">Cancel</button>
-                <button onClick={() => { setShowEndConfirm(false); handleEndInterview(); }} className="px-4 py-2 bg-amber-500 text-white rounded">End Interview</button>
+            <div className="absolute inset-0 bg-black/60" onClick={() => setShowEndConfirm(false)} />
+            <div className="bg-gray-800 rounded-xl shadow-2xl p-6 z-10 w-full max-w-md border border-gray-700">
+              <h3 className="text-lg font-semibold mb-2 text-white">End interview?</h3>
+              <p className="text-sm text-gray-300 mb-6">
+                Are you sure you want to end the interview? This will disconnect you from the room.
+              </p>
+              <div className="flex gap-3 justify-end">
+                <button
+                  onClick={() => setShowEndConfirm(false)}
+                  className="px-4 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-600"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    setShowEndConfirm(false);
+                    handleEndInterview();
+                  }}
+                  className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+                >
+                  End Interview
+                </button>
               </div>
             </div>
           </div>
         )}
-
-        {/* Role selector and Start button sit under the live room (single-page UX). */}
-        <div className="mt-6 pt-6 border-t">
-          <div className="grid grid-cols-1 md:grid-cols-1 gap-4 mb-4">
-            <div>
-              <label className="block text-sm font-medium mb-2">Interview Role</label>
-              <select
-                value={selectedRole}
-                onChange={(e) => setSelectedRole(e.target.value)}
-                className="w-full px-4 py-2 border-2 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent bg-white"
-                disabled={isInterviewStarted}
-              >
-                {INTERVIEW_ROLES.map((role) => (
-                  <option key={role.id} value={role.id}>
-                    {role.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          {/* Start button always visible under the room; disabled when already started */}
-          <div className="flex justify-center">
-            <button onClick={handleStartInterview} disabled={connecting || isInterviewStarted} className="px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg font-semibold text-lg hover:scale-105 transform transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_8px_30px_rgba(99,102,241,0.08)]">
-              {isInterviewStarted ? 'Interview in progress' : (connecting ? 'Connecting…' : '🚀 Start Interview')}
-            </button>
-          </div>
-        </div>
       </motion.div>
     </div>
   );
