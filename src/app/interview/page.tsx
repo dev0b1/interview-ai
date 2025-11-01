@@ -500,7 +500,7 @@ function InterviewRoomContent({
                 ) : (
                   <>
                     <div className="text-gray-300 text-sm">• Speak slower.</div>
-                    <div className="text-gray-300 text-sm">• Avoid "like".</div>
+                    <div className="text-gray-300 text-sm">• Avoid &quot;like&quot;.</div>
                   </>
                 )}
               </div>
