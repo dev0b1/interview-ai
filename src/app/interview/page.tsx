@@ -781,45 +781,6 @@ export default function InterviewPage() {
     );
   }
 
-  if (!token && connecting) {
-    return (
-      <div className="flex flex-col gap-6">
-        <motion.div
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="bg-white rounded-2xl shadow-lg p-8"
-        >
-          <div className="text-center">
-            <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-gray-200 border-t-blue-500 mb-4"></div>
-            <div className="text-lg text-gray-600">Connecting to interview room...</div>
-          </div>
-        </motion.div>
-      </div>
-    );
-  }
-
-  if (!token) {
-    return (
-      <div className="flex flex-col gap-6">
-        <motion.div
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="bg-white rounded-2xl shadow-lg p-8"
-        >
-          <div className="text-center">
-            <div className="text-lg text-red-600 mb-4">Failed to connect</div>
-            <button
-              onClick={connectToRoom}
-              className="px-6 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition"
-            >
-              Retry
-            </button>
-          </div>
-        </motion.div>
-      </div>
-    );
-  }
-
   return (
     <div className="flex flex-col gap-6">
       <motion.div
@@ -829,7 +790,7 @@ export default function InterviewPage() {
       >
         {/* Always render the LiveKitRoom visually, but only connect when the user starts */}
         <LiveKitRoom
-          token={token}
+          token={token ?? undefined}
           serverUrl={process.env.NEXT_PUBLIC_LIVEKIT_URL}
           connect={isInterviewStarted}
           audio={true}
