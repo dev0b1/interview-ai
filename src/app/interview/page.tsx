@@ -62,12 +62,7 @@ const INTERVIEW_ROLES = [
   { id: "general", label: "General Interview" },
 ];
 
-const PERSONALITIES = [
-  { id: "friendly", label: "Friendly" },
-  { id: "balanced", label: "Balanced" },
-  { id: "challenging", label: "Challenging" },
-  { id: "casual", label: "Casual" },
-];
+// Roast mode only - no personality selection needed
 
 // ============================================================================
 // HOOKS
@@ -77,9 +72,13 @@ function useAgentMessages() {
   const [greeting, setGreeting] = React.useState<string | null>(null);
   const [summary, setSummary] = React.useState<InterviewSummary | null>(null);
   const [behaviorFlags, setBehaviorFlags] = React.useState<string[]>([]);
+  const [confidence, setConfidence] = React.useState<number | null>(null);
+  const [professionalism, setProfessionalism] = React.useState<number | null>(null);
+  const [roastMessages, setRoastMessages] = React.useState<string[]>([]);
 
   const { message: msgAgent } = useDataChannel("agent-messages");
   const { message: msgInterview } = useDataChannel("interview_results");
+  const { message: msgLiveMetrics } = useDataChannel("live-metrics");
 
   React.useEffect(() => {
     const process = (messageVar: unknown) => {
@@ -91,7 +90,7 @@ function useAgentMessages() {
 
         const type = data?.type || data?.event || null;
 
-        switch (type) {
+  switch (type) {
           case "agent.greeting":
             setGreeting(data.text as string || data.message as string);
             break;
@@ -117,9 +116,20 @@ function useAgentMessages() {
 
           case "agent.behavior_flag":
             setBehaviorFlags((prev) => [...prev, ...(data.issues as string[] || [])]);
+            // also push a brief roast message if provided
+            if ((data as Record<string, unknown>)['message']) {
+              setRoastMessages((r) => [String((data as Record<string, unknown>)['message']), ...r].slice(0, 5));
+            }
             break;
 
           case "agent.post_interview_summary":
+            // Extract potential numeric metrics if present
+            const metricsRec = (data as Record<string, unknown>)['metrics'] as Record<string, unknown> | undefined;
+            const conf = metricsRec ? Number(metricsRec['confidence'] as number ?? metricsRec['clarity'] as number ?? NaN) : NaN;
+            const prof = metricsRec ? Number(metricsRec['professionalism'] as number ?? NaN) : NaN;
+            // Agent metrics are usually 0-100; convert to 0-10 scale for UI consistency
+            if (!Number.isNaN(conf)) setConfidence(Math.round(conf / 10));
+            if (!Number.isNaN(prof)) setProfessionalism(Math.round(prof / 10));
             setSummary({
               score: (data.metrics as { clarity?: number })?.clarity || 0,
               tone: "Professional",
@@ -128,6 +138,9 @@ function useAgentMessages() {
               metrics: data.metrics as InterviewSummary["metrics"],
               ai_feedback: (data.ai_feedback as string),
             });
+            if ((data as Record<string, unknown>)['ai_feedback']) {
+              setRoastMessages((r) => [String((data as Record<string, unknown>)['ai_feedback']), ...r].slice(0, 5));
+            }
             break;
         }
       } catch (err) {
@@ -137,9 +150,26 @@ function useAgentMessages() {
 
     process(msgAgent);
     process(msgInterview);
-  }, [msgAgent, msgInterview]);
+    // live metrics channel: lightweight numeric updates
+    try {
+      if (msgLiveMetrics) {
+        const mv = msgLiveMetrics as { payload?: Uint8Array };
+        const text = new TextDecoder().decode(mv.payload as Uint8Array);
+        const d = JSON.parse(text) as Record<string, unknown> | null;
+        if (d) {
+          const confRaw = Number(d['confidence_score'] ?? d['confidence'] ?? NaN);
+          const profRaw = Number(d['professionalism_score'] ?? d['professionalism'] ?? NaN);
+          if (!Number.isNaN(confRaw)) setConfidence(Math.round(confRaw / 10));
+          if (!Number.isNaN(profRaw)) setProfessionalism(Math.round(profRaw / 10));
+          if (d['ai_feedback']) setRoastMessages((r) => [String(d['ai_feedback']), ...r].slice(0, 5));
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to parse live-metrics message', err);
+    }
+  }, [msgAgent, msgInterview, msgLiveMetrics]);
 
-  return { greeting, summary, behaviorFlags, setGreeting };
+  return { greeting, summary, behaviorFlags, setGreeting, confidence, professionalism, roastMessages };
 }
 
 function useInterviewTranscript(): Entry[] {
@@ -177,13 +207,11 @@ function useInterviewTranscript(): Entry[] {
 function InterviewConfigPublisher({
   name,
   topic,
-  personality,
   interviewId,
   enabled,
 }: {
   name: string;
   topic: string;
-  personality: string;
   interviewId?: string;
   enabled: boolean;
 }) {
@@ -199,9 +227,9 @@ function InterviewConfigPublisher({
           type: "agent.instruction",
           name: name || "Candidate",
           topic: topic || "General",
-          personality: personality || "balanced",
+          personality: 'roast',
           interviewId: interviewId || null,
-          instruction: `Conduct a ${personality} interview about ${topic} with ${name}.`,
+          instruction: `Conduct a roast interview about ${topic} with ${name}.`,
         };
 
         const encoder = new TextEncoder();
@@ -217,7 +245,7 @@ function InterviewConfigPublisher({
     }, 500);
 
     return () => clearTimeout(timer);
-  }, [localParticipant, published, name, topic, personality, interviewId, enabled]);
+  }, [localParticipant, published, name, topic, interviewId, enabled]);
 
   return null;
 }
@@ -299,7 +327,7 @@ function InterviewControls({
       <button
         onClick={onStartInterview}
         disabled={disabled}
-        className="w-full px-8 py-4 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-lg font-bold text-lg hover:scale-105 transition disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 shadow-lg"
+        className="w-full px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg font-semibold text-lg hover:scale-105 transform transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_8px_30px_rgba(99,102,241,0.08)]"
       >
         🚀 Start Interview
       </button>
@@ -311,25 +339,21 @@ function InterviewControls({
       <div className="flex flex-wrap gap-2">
         <button
           onClick={toggleMute}
-          className={`px-4 py-2 rounded-md transition font-medium ${
-            isMuted 
-              ? "bg-red-100 text-red-700 hover:bg-red-200" 
-              : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-          }`}
+          className={`px-4 py-2 rounded-md transition font-medium ${isMuted ? 'bg-red-600 text-white' : 'bg-gray-800 text-white'} shadow-md hover:brightness-105`}
         >
           {isMuted ? "🔇 Unmute" : "🎤 Mute"}
         </button>
         
         <button
           onClick={onEndInterview}
-          className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-md transition font-medium"
+          className="px-4 py-2 bg-gradient-to-r from-amber-500 to-amber-600 text-white rounded-md transition font-medium shadow-[0_6px_20px_rgba(245,158,11,0.08)] hover:brightness-105"
         >
           ⏹ End Interview
         </button>
 
         <button
           onClick={() => window.location.reload()}
-          className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-md transition font-medium"
+          className="px-4 py-2 bg-gradient-to-r from-red-600 to-rose-600 text-white rounded-md transition font-medium shadow-[0_6px_20px_rgba(239,68,68,0.08)] hover:brightness-105"
         >
           Leave & End Interview
         </button>
@@ -337,14 +361,14 @@ function InterviewControls({
         {!isRecording ? (
           <button
             onClick={startRecording}
-            className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-md transition font-medium"
+            className="px-4 py-2 bg-gradient-to-r from-blue-600 to-cyan-500 text-white rounded-md transition font-medium shadow-[0_8px_30px_rgba(59,130,246,0.08)] hover:brightness-105"
           >
             ⏺ Record
           </button>
         ) : (
           <button
             onClick={stopRecording}
-            className="px-4 py-2 bg-blue-700 hover:bg-blue-800 text-white rounded-md transition font-medium"
+            className="px-4 py-2 bg-gradient-to-r from-sky-700 to-blue-800 text-white rounded-md transition font-medium shadow-[0_8px_30px_rgba(14,165,233,0.06)] hover:brightness-105"
           >
             ⏹ Stop Recording
           </button>
@@ -364,21 +388,21 @@ function InterviewControls({
 function InterviewRoomContent({
   name,
   topic,
-  personality,
   interviewId,
   isInterviewStarted,
   onStartInterview,
   onEndInterview,
+  connecting,
 }: {
   name: string;
   topic: string;
-  personality: string;
   interviewId?: string | null;
   isInterviewStarted: boolean;
   onStartInterview: () => void;
   onEndInterview: () => void;
+  connecting?: boolean;
 }) {
-  const { greeting, summary, behaviorFlags, setGreeting } = useAgentMessages();
+  const { greeting, summary, behaviorFlags, setGreeting, confidence, professionalism, roastMessages } = useAgentMessages();
   const entries = useInterviewTranscript();
   const room = useRoomContext();
   const remotes = useRemoteParticipants();
@@ -387,6 +411,23 @@ function InterviewRoomContent({
   const microphoneTrack = tracks.find((t) => t.source === Track.Source.Microphone);
   const [showTranscript, setShowTranscript] = React.useState(false);
   const [showSummary, setShowSummary] = React.useState(false);
+  // UI polish: small pulse triggers for animated number feedback
+  const [confPulse, setConfPulse] = React.useState(false);
+  const [profPulse, setProfPulse] = React.useState(false);
+
+  React.useEffect(() => {
+    if (confidence === null) return;
+    setConfPulse(true);
+    const t = setTimeout(() => setConfPulse(false), 300);
+    return () => clearTimeout(t);
+  }, [confidence]);
+
+  React.useEffect(() => {
+    if (professionalism === null) return;
+    setProfPulse(true);
+    const t = setTimeout(() => setProfPulse(false), 300);
+    return () => clearTimeout(t);
+  }, [professionalism]);
 
   const connectionState = room?.state as unknown as string | undefined;
   const isConnected = connectionState === 'connected' || connectionState === 'Connected';
@@ -408,7 +449,6 @@ function InterviewRoomContent({
         <InterviewConfigPublisher
           name={name}
           topic={topic}
-          personality={personality}
           interviewId={interviewId || undefined}
           enabled={isInterviewStarted}
         />
@@ -469,16 +509,82 @@ function InterviewRoomContent({
 
       {/* Main content */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2">
-          {/* Video Card */}
-          <div className="aspect-video bg-gradient-to-br from-gray-900 to-gray-800 rounded-lg flex items-center justify-center">
-            <div className="text-center text-white">
-              <div className="w-32 h-32 mx-auto rounded-full bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center text-4xl mb-4">
-                🤖
+  <div className="lg:col-span-2">
+          {/* Roast Arena — Pro Practice Mode Card */}
+          <div className="aspect-video bg-gradient-to-br from-gray-900/80 to-[#0f0520] rounded-lg flex items-center justify-center p-6">
+            <div className="w-full max-w-2xl mx-auto text-white grid grid-cols-1 md:grid-cols-3 gap-6 items-center">
+              {/* Left: progress indicator */}
+              <div className="md:col-span-3">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="text-sm text-gray-300">Question {Math.min(5, (behaviorFlags.length || 0) + 1)} of 5</div>
+                  <div className="text-sm text-gray-400">Roast Intensity</div>
+                </div>
+                <div className="w-full h-2 bg-white/10 rounded-full overflow-hidden">
+                  {(() => {
+                    const total = 5;
+                    const current = Math.min(total, Math.max(1, (behaviorFlags.length || 0) + 1));
+                    const pct = Math.round((current / total) * 100);
+                    const color = pct > 75 ? 'bg-red-500' : pct > 50 ? 'bg-orange-400' : 'bg-blue-400';
+                    return <div className={`${color} h-2`} style={{ width: `${pct}%` }} />;
+                  })()}
+                </div>
               </div>
-              <div className="text-lg font-medium">{personality} AI Interviewer</div>
-              <div className="text-sm text-gray-400 mt-2">
-                {isInterviewStarted ? "Listening..." : "Ready when you are"}
+
+              {/* Avatar & metrics */}
+              <div className="flex flex-col items-center md:col-span-1">
+                <div className="w-36 h-36 rounded-full bg-gradient-to-br from-[#6ee7ff]/30 via-[#9b5cff]/20 to-[#7c3aed]/30 flex items-center justify-center text-5xl mb-4 shadow-lg ring-1 ring-white/10">
+                  🤖
+                </div>
+                <div className="w-full text-center">
+                  <div className="text-sm text-gray-300">Confidence Score</div>
+                  <motion.div
+                    animate={confPulse ? { scale: 1.06 } : { scale: 1 }}
+                    transition={{ duration: 0.18 }}
+                    className="text-xl font-semibold text-white"
+                  >
+                    {confidence !== null ? `${Math.round(confidence)}/10` : (summary?.metrics?.clarity ? `${Math.round((summary.metrics.clarity || 0))}/10` : '8/10')}
+                  </motion.div>
+
+                  {/* animated bar */}
+                  <div className="w-full h-2 bg-white/10 rounded-full overflow-hidden mt-2">
+                    <motion.div
+                      className="h-2 bg-emerald-400 rounded"
+                      animate={{ width: `${((confidence ?? (summary?.metrics?.clarity ?? 8)) as number) * 10}%` }}
+                      transition={{ type: 'tween', duration: 0.6 }}
+                    />
+                  </div>
+                </div>
+
+                <div className="w-full text-center mt-2">
+                  <div className="text-sm text-gray-300">Professionalism</div>
+                  <motion.div
+                    animate={profPulse ? { scale: 1.06 } : { scale: 1 }}
+                    transition={{ duration: 0.18 }}
+                    className="text-xl font-semibold text-white"
+                  >
+                    {professionalism !== null ? `${Math.round(professionalism)}/10` : (summary?.metrics?.confidence ? `${Math.round((summary.metrics.confidence || 0))}/10` : '7/10')}
+                  </motion.div>
+
+                  {/* animated bar */}
+                  <div className="w-full h-2 bg-white/10 rounded-full overflow-hidden mt-2">
+                    <motion.div
+                      className="h-2 bg-sky-400 rounded"
+                      animate={{ width: `${((professionalism ?? (summary?.metrics?.confidence ?? 7)) as number) * 10}%` }}
+                      transition={{ type: 'tween', duration: 0.6 }}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Center: Roast feedback area */}
+              <div className="md:col-span-2 bg-white/5 rounded-lg p-4 flex flex-col justify-between">
+                <div>
+                  <div className="text-sm text-gray-300 mb-2">Roast Feedback</div>
+                  <div className="min-h-[64px] text-sm text-white/90">
+                    {roastMessages && roastMessages.length ? roastMessages[0] : (summary?.ai_feedback ? summary.ai_feedback : (behaviorFlags && behaviorFlags.length ? behaviorFlags[0] : 'No feedback yet — ace the next one!'))}
+                  </div>
+                </div>
+                <div className="mt-3 text-xs text-gray-400">Live suggestions update after each answer</div>
               </div>
             </div>
           </div>
@@ -497,18 +603,23 @@ function InterviewRoomContent({
         </div>
 
         <div className="space-y-4">
-          {isInterviewStarted && (
-            <>
+          {/* Right-side placeholder for Transcript / Tips toggle (future feature) */}
+          <div className="bg-white/3 rounded-lg p-4 min-h-[160px]">
+            <div className="flex items-center justify-between mb-3">
+              <div className="text-sm font-medium text-gray-200">Transcript / Tips</div>
+              <div className="text-xs text-gray-400">coming soon</div>
+            </div>
+            <div className="text-sm text-gray-300">Toggle between transcript and bite-sized tips for improvement. This panel will host the transcript, short tips, and targeted practice prompts.</div>
+            <div className="mt-4">
               <button
                 onClick={() => setShowTranscript(!showTranscript)}
-                className="w-full px-4 py-2 border-2 rounded-lg hover:bg-gray-50 font-medium transition"
+                className="px-4 py-2 bg-indigo-600 text-white rounded-md shadow-sm hover:brightness-105"
               >
                 {showTranscript ? "Hide" : "Show"} Transcript
               </button>
-
-              {showTranscript && <TranscriptPanel entries={entries} />}
-            </>
-          )}
+            </div>
+            {showTranscript && <div className="mt-3"><TranscriptPanel entries={entries} /></div>}
+          </div>
         </div>
       </div>
 
@@ -548,7 +659,7 @@ export default function InterviewPage() {
 
   // Interview state
   const [selectedRole, setSelectedRole] = React.useState("frontend");
-  const [selectedPersonality, setSelectedPersonality] = React.useState("balanced");
+  // roast-only mode: no personality selection
   const [token, setToken] = React.useState<string | null>(null);
   const [interviewId, setInterviewId] = React.useState<string | null>(null);
   const [connecting, setConnecting] = React.useState(false);
@@ -587,7 +698,7 @@ export default function InterviewPage() {
       if (resp.interviewId) {
         saveInterview({
           id: resp.interviewId,
-          name: `${selectedRole} - ${selectedPersonality}`,
+          name: `${selectedRole}`,
           date: new Date().toISOString(),
         });
       }
@@ -598,17 +709,36 @@ export default function InterviewPage() {
     } finally {
       setConnecting(false);
     }
-  }, [session?.access_token, userName, selectedRole, selectedPersonality, router]);
+  }, [session?.access_token, userName, selectedRole, router]);
 
-  // Connect to room immediately on mount
-  React.useEffect(() => {
-    if (session?.access_token && !token && !connecting) {
-      void connectToRoom();
+  // Previously we auto-connected on mount which could cause the AI agent to join
+  // unexpectedly when users interacted with the Start button. Instead, connect
+  // only when the user explicitly starts the interview.
+
+  const handleStartInterview = async () => {
+    // If we're already connected, just flip the started flag.
+    if (token) {
+      setIsInterviewStarted(true);
+      return;
     }
-  }, [session, token, connecting, connectToRoom]);
 
-  const handleStartInterview = () => {
-    setIsInterviewStarted(true);
+    // Otherwise, connect first and then start the interview when token is ready.
+    try {
+      await connectToRoom();
+      // connectToRoom sets token/interviewId on success
+      if (token) {
+        setIsInterviewStarted(true);
+      } else {
+        // In some cases, connectToRoom updates state asynchronously; ensure we set started
+        // after a short tick if token became available.
+        setTimeout(() => {
+          if (!isInterviewStarted && token) setIsInterviewStarted(true);
+        }, 250);
+      }
+    } catch (err) {
+      console.error('Failed to start interview:', err);
+      alert('Failed to start interview. See console for details.');
+    }
   };
 
   const handleEndInterview = () => {
@@ -693,47 +823,32 @@ export default function InterviewPage() {
           <InterviewRoomContent
             name={userName}
             topic={selectedRole}
-            personality={selectedPersonality}
             interviewId={interviewId}
             isInterviewStarted={isInterviewStarted}
             onStartInterview={handleStartInterview}
             onEndInterview={handleEndInterview}
+            connecting={connecting}
           />
 
           {/* Role and Personality Dropdowns - Only show before interview starts */}
           {!isInterviewStarted && (
             <div className="mt-6 pt-6 border-t">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                <div>
-                  <label className="block text-sm font-medium mb-2">Interview Role</label>
-                  <select
-                    value={selectedRole}
-                    onChange={(e) => setSelectedRole(e.target.value)}
-                    className="w-full px-4 py-2 border-2 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
-                  >
-                    {INTERVIEW_ROLES.map((role) => (
-                      <option key={role.id} value={role.id}>
-                        {role.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium mb-2">Interviewer Style</label>
-                  <select
-                    value={selectedPersonality}
-                    onChange={(e) => setSelectedPersonality(e.target.value)}
-                    className="w-full px-4 py-2 border-2 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent bg-white"
-                  >
-                    {PERSONALITIES.map((personality) => (
-                      <option key={personality.id} value={personality.id}>
-                        {personality.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
+                  <div className="grid grid-cols-1 md:grid-cols-1 gap-4 mb-4">
+                    <div>
+                      <label className="block text-sm font-medium mb-2">Interview Role</label>
+                      <select
+                        value={selectedRole}
+                        onChange={(e) => setSelectedRole(e.target.value)}
+                        className="w-full px-4 py-2 border-2 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent bg-white"
+                      >
+                        {INTERVIEW_ROLES.map((role) => (
+                          <option key={role.id} value={role.id}>
+                            {role.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
             </div>
           )}
 

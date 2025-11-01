@@ -1,55 +1,65 @@
-<!-- Copilot instructions: short, actionable, repository-specific -->
+
+<!-- Copilot instructions: concise, actionable, repo-specific -->
 
 # interview-ai — quick guide for coding agents
 
-Keep this short: the frontend is a Next.js (App Router) TypeScript app; the canonical analysis engine is a LiveKit-based Python agent in `backend/`.
+Quick context: frontend is a Next.js (App Router) TypeScript app. The canonical analysis/summarization engine is the Python LiveKit agent in `backend/` — prefer interacting with the agent and the in-room data channels over re-implementing server-side LLM endpoints.
 
-Key contracts and behaviour
-- GET /api/livekit/token (`src/app/api/livekit/token/route.ts`) → { token, interviewId }
-  - Generates LiveKit AccessToken and attempts to create an `interviews` row (prefers Supabase service role, falls back to direct PG or anon Supabase).
-- POST /api/interviews/audio/upload (`src/app/api/interviews/audio/upload/route.ts`) — multipart form with `interviewId` + `file`. Requires `Authorization: Bearer <supabase-token>`; uploads to Supabase storage bucket `interviews` and upserts `audio_path`/`audio_signed_url`.
-- Summaries/analysis: the codebase prefers the LiveKit agent (`backend/agent.py`). The in-tree summarization and analyze endpoints are intentionally disabled (return 501) to avoid duplicate/conflicts. Use the agent's data-channel messages or `BACKEND_AGENT_URL` when present.
+Core contracts (most important to preserve)
+- GET /api/livekit/token — `src/app/api/livekit/token/route.ts` → { token, interviewId }
+  - Generates a LiveKit AccessToken and attempts to create an `interviews` row. It may use the Supabase service role or fall back to direct DB/upsert.
+- POST /api/interviews/audio/upload — `src/app/api/interviews/audio/upload/route.ts` (multipart form: `interviewId` + `file`). Requires `Authorization: Bearer <supabase-token>` and writes `audio_path`/`audio_signed_url` to the interview row.
 
-Data patterns & conventions
-- `interviews` table (`src/db/schema.ts`) stores `transcript` and `analysis` as TEXT containing serialized JSON strings — code expects `JSON.parse(row.transcript)`.
-- Audio/video stored in Supabase storage; signed URLs are saved to the interview row for server-side access.
+Realtime/data-channel conventions
+- Agent publishes room-level messages across a few topics used by the frontend:
+  - `agent-messages` / `interview_results` — higher-level summaries, analysis blobs.
+  - `live-metrics` — numeric realtime metrics (agent publishes JSON like { type: 'live_metrics', confidence_score: <0-100>, professionalism_score: <0-100>, filler_count: <int>, ai_feedback?: string, question_number?: number }). Frontend maps 0–100 → 0–10 for display.
 
-Dev & debug commands (Windows bash)
-```bash
+Data shapes & DB conventions
+- `interviews` table (`src/db/schema.ts`): `transcript` and `analysis` are stored as TEXT containing serialized JSON strings. Code expects to call `JSON.parse(row.transcript)` when reading.
+
+Where to look first (fast path)
+- Token + interview creation: `src/app/api/livekit/token/route.ts`
+- Audio uploads: `src/app/api/interviews/audio/upload/route.ts`
+- Interview UI / live metrics wiring: `src/app/interview/page.tsx` (front-end subscribes to `live-metrics`)
+- Agent: `backend/agent.py` — canonical summarizer/analyzer and publisher of `live-metrics`
+- DB schema and client: `src/db/schema.ts`, `src/db/client.ts`
+
+Dev & debug (Windows bash)
+```
 npm install
-npm run dev       # start Next dev server
+npm run dev     # Next dev (turbopack)
 npm run build
 npm run start
-npm run db:migrate       # run SQL migrations against $DATABASE_URL
+npm run db:migrate    # run SQL migrations against $DATABASE_URL
 ```
-Python agent (optional/local):
-```bash
+
+Python agent (local run)
+```
 python -m venv .venv
-source .venv/Scripts/activate   # Windows bash
+.venv/Scripts/activate
 pip install -r backend/requirements.txt
 python backend/app.py
 ```
-
-Where to look first (examples)
-- Token + interview creation: `src/app/api/livekit/token/route.ts` (service role / DB fallback logic)
-- Audio uploads: `src/app/api/interviews/audio/upload/route.ts` (formData -> supabase.storage)
-- DB schema: `src/db/schema.ts` (transcript/analysis stored as JSON strings)
-- Disabled endpoints: `src/app/api/ai/summary/route.ts`, `src/app/api/interviews/analyze/route.ts` (return 501; agent is canonical)
-- Agent: `backend/agent.py` (LiveKit agent, retry logic, TTS/LLM helpers, function tools)
 
 Important env vars
 - LIVEKIT_API_KEY, LIVEKIT_API_SECRET
 - SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY, DATABASE_URL
 - OPENAI_API_KEY or OPENROUTER_API_KEY (+ OPENROUTER_API_BASE)
-- BACKEND_AGENT_URL (if using HTTP proxy to a local agent)
+- BACKEND_AGENT_URL (used to proxy summarization in some dev setups)
 
-Project-specific gotchas (do not change silently)
-- The LiveKit Python agent is the single source of truth for summaries/analysis — do not re-enable the disabled server endpoints without coordinating agent behavior.
-- Transcripts/analysis are serialized JSON strings in text columns — changing this shape requires updating multiple routes and the agent.
-- `src/db/client.ts` may dynamically skip `drizzle-orm` if not installed — migrations live in `drizzle/migrations/` and `supabase/migrations/`.
+Repo-specific gotchas (do not change silently)
+- The Python LiveKit agent is the single source of truth for realtime summaries/analysis — avoid re-enabling the disabled summarization endpoints (they return 501 intentionally).
+- Transcripts and analysis are serialized JSON strings in text columns. Changing this shape requires coordinated updates to frontend routes and the agent.
+- `src/db/client.ts` can skip `drizzle-orm` in some dev setups — migrations live in `drizzle/migrations/` (interviews) and `supabase/migrations/` (billing/profiles).
 
-If you want examples (sample request payloads, agent topics, or common log messages) say which area to expand.
-<!-- Copilot instructions: short, actionable, repository-specific -->
+Quick troubleshooting checklist
+- If frontend doesn't show live metrics: confirm the Python agent is running and publishing `live-metrics` packets with fields `confidence_score` and `professionalism_score` (0–100).
+- If server-side reads fail to find a session: check the client `sb_access_token` cookie; `AuthProvider` should clear it on sign-out.
+- When editing payment/webhook code, make small incremental changes and run the build after each logical block — earlier multi-block edits caused parse errors.
+
+If you want a shorter snippet (startup commands, token path, or the `live-metrics` payload example) I can produce that next.
+
 
 # Overview
 

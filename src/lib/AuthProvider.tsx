@@ -164,6 +164,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       await supabase.auth.signOut();
       setUser(null);
       setSession(null);
+      try {
+        // clear the non-HttpOnly access token cookie so server middleware no longer sees it
+        document.cookie = 'sb_access_token=; Path=/; Max-Age=0; SameSite=Lax';
+      } catch {
+        // ignore cookie clear errors
+      }
     } catch {
       // ignore
     }
