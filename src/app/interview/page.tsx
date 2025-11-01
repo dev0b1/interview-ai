@@ -466,6 +466,7 @@ function InterviewRoomContent({
             {remotes.length > 0 ? "AI Agent Active" : "Waiting for agent..."}
           </div>
         </div>
+        
       </div>
 
       {/* Agent greeting */}
@@ -657,6 +658,8 @@ export default function InterviewPage() {
   const [interviewId, setInterviewId] = React.useState<string | null>(null);
   const [connecting, setConnecting] = React.useState(false);
   const [isInterviewStarted, setIsInterviewStarted] = React.useState(false);
+  const [micPrefetched, setMicPrefetched] = React.useState(false);
+  const [showEndConfirm, setShowEndConfirm] = React.useState(false);
 
   // Get user name
   const userName = React.useMemo(() => {
@@ -706,6 +709,37 @@ export default function InterviewPage() {
       setConnecting(false);
     }
   }, [session?.access_token, userName, selectedRole, router]);
+
+  // Safe microphone prefetch: only warm up if permission already granted (no prompt)
+  React.useEffect(() => {
+    let mounted = true;
+    async function prefetch() {
+      if (!('permissions' in navigator) || !('mediaDevices' in navigator)) return;
+      try {
+        // Query microphone permission state. If already granted, warm up getUserMedia to reduce latency later.
+        // Do NOT call getUserMedia if state is 'prompt' to avoid surprising permission popups.
+        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+        // @ts-ignore
+        const p = await navigator.permissions.query({ name: 'microphone' } as PermissionDescriptor);
+        if (!mounted) return;
+        if (p && (p as any).state === 'granted') {
+          try {
+            const s = await navigator.mediaDevices.getUserMedia({ audio: true });
+            // stop immediately to release devices
+            s.getTracks().forEach((t) => t.stop());
+            if (mounted) setMicPrefetched(true);
+          } catch (err) {
+            // ignore
+          }
+        }
+      } catch (err) {
+        // ignore
+      }
+    }
+
+    prefetch();
+    return () => { mounted = false; };
+  }, []);
 
   // Previously we auto-connected on mount which could cause the AI agent to join
   // unexpectedly when users interacted with the Start button. Instead, connect
@@ -793,80 +827,89 @@ export default function InterviewPage() {
         animate={{ opacity: 1, y: 0 }}
         className="bg-white rounded-2xl shadow-lg p-6"
       >
-        {/* If the interview has not started, show the pre-join setup UI */}
-        {!isInterviewStarted ? (
-          <div className="flex flex-col gap-6">
-            <div className="text-center">
-              <h2 className="text-xl font-semibold">🎯 Interview Setup</h2>
-              <p className="text-sm text-gray-500 mt-2">Select your role and click Start to join the live interview room. The AI agent will join only after you start.</p>
-            </div>
+        {/* Always render the LiveKitRoom visually, but only connect when the user starts */}
+        <LiveKitRoom
+          token={token}
+          serverUrl={process.env.NEXT_PUBLIC_LIVEKIT_URL}
+          connect={isInterviewStarted}
+          audio={true}
+          video={false}
+          options={{
+            dynacast: true,
+            adaptiveStream: true,
+            audioCaptureDefaults: {
+              echoCancellation: true,
+              noiseSuppression: true,
+              autoGainControl: true,
+            },
+          }}
+          onDisconnected={() => {
+            setToken(null);
+            setIsInterviewStarted(false);
+          }}
+        >
+          <InterviewRoomContent
+            name={userName}
+            topic={selectedRole}
+            interviewId={interviewId}
+            isInterviewStarted={isInterviewStarted}
+            onStartInterview={handleStartInterview}
+            onEndInterview={() => setShowEndConfirm(true)}
+            connecting={connecting}
+          />
 
-            <div className="grid grid-cols-1 md:grid-cols-1 gap-4 mb-4">
-              <div>
-                <label className="block text-sm font-medium mb-2">Interview Role</label>
-                <select
-                  value={selectedRole}
-                  onChange={(e) => setSelectedRole(e.target.value)}
-                  className="w-full px-4 py-2 border-2 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent bg-white"
-                >
-                  {INTERVIEW_ROLES.map((role) => (
-                    <option key={role.id} value={role.id}>
-                      {role.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            <div className="flex justify-center">
-              <button onClick={handleStartInterview} disabled={connecting} className="px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg font-semibold text-lg hover:scale-105 transform transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_8px_30px_rgba(99,102,241,0.08)]">
-                {connecting ? 'Connecting…' : '🚀 Start Interview'}
-              </button>
-            </div>
-          </div>
-        ) : (
-          /* Mount the live room only after user has started */
-          <LiveKitRoom
-            token={token}
-            serverUrl={process.env.NEXT_PUBLIC_LIVEKIT_URL}
-            connect={true}
-            audio={true}
-            video={false}
-            options={{
-              dynacast: true,
-              adaptiveStream: true,
-              audioCaptureDefaults: {
-                echoCancellation: true,
-                noiseSuppression: true,
-                autoGainControl: true,
-              },
-            }}
-            onDisconnected={() => {
-              setToken(null);
-              setIsInterviewStarted(false);
-            }}
-          >
-            <InterviewRoomContent
-              name={userName}
-              topic={selectedRole}
-              interviewId={interviewId}
+          <div className={isInterviewStarted ? "mt-4" : "mt-4"}>
+            <InterviewControls
               isInterviewStarted={isInterviewStarted}
               onStartInterview={handleStartInterview}
               onEndInterview={handleEndInterview}
-              connecting={connecting}
+              interviewId={interviewId}
+              disabled={connecting}
             />
+          </div>
+        </LiveKitRoom>
 
-            <div className={isInterviewStarted ? "mt-4" : "mt-4"}>
-              <InterviewControls
-                isInterviewStarted={isInterviewStarted}
-                onStartInterview={handleStartInterview}
-                onEndInterview={handleEndInterview}
-                interviewId={interviewId}
-                disabled={connecting}
-              />
+        {showEndConfirm && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center">
+            <div className="absolute inset-0 bg-black/40" onClick={() => setShowEndConfirm(false)} />
+            <div className="bg-white rounded-lg shadow-lg p-6 z-10 w-full max-w-md">
+              <h3 className="text-lg font-semibold mb-2">End interview?</h3>
+              <p className="text-sm text-gray-600 mb-4">Are you sure you want to end the interview? This will disconnect you from the room.</p>
+              <div className="flex gap-2 justify-end">
+                <button onClick={() => setShowEndConfirm(false)} className="px-4 py-2 bg-gray-100 rounded">Cancel</button>
+                <button onClick={() => { setShowEndConfirm(false); handleEndInterview(); }} className="px-4 py-2 bg-amber-500 text-white rounded">End Interview</button>
+              </div>
             </div>
-          </LiveKitRoom>
+          </div>
         )}
+
+        {/* Role selector and Start button sit under the live room (single-page UX). */}
+        <div className="mt-6 pt-6 border-t">
+          <div className="grid grid-cols-1 md:grid-cols-1 gap-4 mb-4">
+            <div>
+              <label className="block text-sm font-medium mb-2">Interview Role</label>
+              <select
+                value={selectedRole}
+                onChange={(e) => setSelectedRole(e.target.value)}
+                className="w-full px-4 py-2 border-2 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent bg-white"
+                disabled={isInterviewStarted}
+              >
+                {INTERVIEW_ROLES.map((role) => (
+                  <option key={role.id} value={role.id}>
+                    {role.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* Start button always visible under the room; disabled when already started */}
+          <div className="flex justify-center">
+            <button onClick={handleStartInterview} disabled={connecting || isInterviewStarted} className="px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg font-semibold text-lg hover:scale-105 transform transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_8px_30px_rgba(99,102,241,0.08)]">
+              {isInterviewStarted ? 'Interview in progress' : (connecting ? 'Connecting…' : '🚀 Start Interview')}
+            </button>
+          </div>
+        </div>
       </motion.div>
     </div>
   );
