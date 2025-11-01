@@ -29,15 +29,15 @@ export default function AuthPage() {
   }
 
   return (
-    <main className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-white">
+    <main className="min-h-screen flex items-center justify-center bg-surface">
       <div className="container mx-auto px-6 py-12">
-        <div className="max-w-md mx-auto bg-white rounded-2xl shadow-lg p-8">
+        <div className="max-w-md mx-auto bg-surface rounded-2xl shadow-lg p-8">
           <h2 className="text-2xl font-semibold mb-4">Sign in</h2>
-          <p className="text-sm text-gray-600 mb-6">Sign in with Google to access your interviews.</p>
+          <p className="text-sm muted mb-6">Sign in with Google to access your interviews.</p>
 
           <button
             onClick={handleGoogleSignIn}
-            className="w-full flex items-center justify-center gap-3 border border-gray-200 hover:shadow-md transition px-4 py-3 rounded-md bg-white text-gray-700"
+            className="w-full flex items-center justify-center gap-3 border border-surface-2 hover:shadow-md transition px-4 py-3 rounded-md bg-surface-2 text-foreground"
           >
             <svg className="w-5 h-5" viewBox="0 0 533.5 544.3" xmlns="http://www.w3.org/2000/svg" aria-hidden>
               <path d="M533.5 278.4c0-18.5-1.5-37.6-4.6-55.6H272v105.2h147.2c-6.4 35.2-25.6 64.9-54.8 85v70.7h88.4c51.7-47.6 82.7-117.9 82.7-205.3z" fill="#4285F4"/>
@@ -48,7 +48,7 @@ export default function AuthPage() {
             <span className="text-sm font-medium">Sign in with Google</span>
           </button>
 
-          <div className="mt-4 text-sm text-gray-500">
+          <div className="mt-4 text-sm muted">
             {status === 'loading' && 'Opening Google sign-in…'}
             {status === 'redirecting' && 'Redirecting…'}
             {status === 'error' && 'Sign-in failed. Try again.'}

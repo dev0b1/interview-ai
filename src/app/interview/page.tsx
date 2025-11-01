@@ -322,24 +322,24 @@ function InterviewControls({
       {!isRecording ? (
         <button
           onClick={startRecording}
-          className="px-6 py-3 bg-indigo-600 text-white rounded-lg transition font-semibold shadow-lg hover:bg-indigo-700 flex items-center gap-2"
+          className="px-6 py-3 bg-accent text-foreground rounded-lg transition font-semibold shadow-lg hover:bg-accent-2 flex items-center gap-2"
         >
-          <span className="w-3 h-3 bg-white rounded-full"></span>
+          <span className="w-3 h-3 bg-foreground rounded-full"></span>
           Record
         </button>
       ) : (
         <button
           onClick={stopRecording}
-          className="px-6 py-3 bg-indigo-600 text-white rounded-lg transition font-semibold shadow-lg hover:bg-indigo-700 flex items-center gap-2"
+          className="px-6 py-3 bg-accent text-foreground rounded-lg transition font-semibold shadow-lg hover:bg-accent-2 flex items-center gap-2"
         >
-          <span className="w-3 h-3 bg-red-500 rounded-sm animate-pulse"></span>
+          <span className="w-3 h-3 bg-danger rounded-sm animate-pulse"></span>
           Recording...
         </button>
       )}
       
       <button
         onClick={onEndInterview}
-        className="px-6 py-3 bg-gray-800 text-white rounded-lg transition font-semibold shadow-lg hover:bg-gray-700"
+        className="px-6 py-3 bg-surface-2 text-foreground rounded-lg transition font-semibold shadow-lg hover:bg-surface"
       >
         End Interview
       </button>
@@ -400,10 +400,10 @@ function InterviewRoomContent({
 
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
-        <h2 className="text-xl font-semibold text-white">Analysis Mode: Active</h2>
+        <h2 className="text-xl font-semibold text-foreground">Analysis Mode: Active</h2>
         <div className="flex items-center gap-2">
-          <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-          <span className="text-gray-300 text-sm">Connected</span>
+          <div className="w-2 h-2 bg-success rounded-full"></div>
+          <span className="muted text-sm">Connected</span>
         </div>
       </div>
 
@@ -413,13 +413,13 @@ function InterviewRoomContent({
         <div className="lg:col-span-2 flex flex-col items-center justify-center">
           {/* AI Avatar */}
           <div className="relative mb-8">
-            <div className="w-64 h-64 rounded-full bg-gradient-to-br from-indigo-600 via-purple-600 to-pink-600 flex items-center justify-center shadow-2xl">
-              <div className="w-48 h-48 rounded-full bg-gray-800 flex items-center justify-center">
+            <div className="w-64 h-64 rounded-full bg-gradient-to-br from-accent via-accent-2 to-accent-2 flex items-center justify-center shadow-2xl">
+              <div className="w-48 h-48 rounded-full bg-surface-2 flex items-center justify-center">
                 <div className="text-7xl">🤖</div>
               </div>
             </div>
             {isConnected && remotes.length > 0 && (
-              <div className="absolute -bottom-2 left-1/2 transform -translate-x-1/2 px-4 py-1 bg-green-500 text-white text-sm rounded-full font-medium">
+              <div className="absolute -bottom-2 left-1/2 transform -translate-x-1/2 px-4 py-1 bg-success text-foreground text-sm rounded-full font-medium">
                 AI Agent Active
               </div>
             )}
@@ -432,14 +432,9 @@ function InterviewRoomContent({
                 state="speaking"
                 barCount={7}
                 trackRef={agentAudioTrack}
-                className="h-24"
-                style={{
-                  '--lk-va-bar-width': '12px',
-                  '--lk-va-bar-gap': '8px',
-                  '--lk-fg': '#ef4444',
-                } as React.CSSProperties}
+                className="h-24 [&>div]:bg-accent"
               />
-              <p className="text-center text-gray-400 text-sm mt-4">
+              <p className="text-center muted text-sm mt-4">
                 Detecting filler words, tone and clarity
               </p>
             </div>
@@ -449,7 +444,7 @@ function InterviewRoomContent({
           {isInterviewStarted && !agentAudioTrack && (
             <div className="w-full max-w-md">
               <div className="h-24 flex items-center justify-center">
-                <p className="text-gray-500 text-sm">Waiting for AI agent to join...</p>
+                <p className="muted text-sm">Waiting for AI agent to join...</p>
               </div>
             </div>
           )}
@@ -465,42 +460,42 @@ function InterviewRoomContent({
         </div>
 
         {/* Right: Metrics Panel */}
-        <div className="bg-gray-800/50 rounded-xl p-6 border border-gray-700">
+        <div className="bg-surface/50 rounded-xl p-6 border border-surface-2">
           <div className="space-y-6">
             {/* Filler Words */}
             <div>
-              <div className="text-gray-400 text-sm mb-1">Filler Words</div>
-              <div className="text-4xl font-bold text-white">{fillerWords}</div>
+              <div className="muted text-sm mb-1">Filler Words</div>
+              <div className="text-4xl font-bold text-foreground">{fillerWords}</div>
             </div>
 
             {/* Confidence */}
             <div>
-              <div className="text-gray-400 text-sm mb-1">Confidence</div>
-              <div className="text-4xl font-bold text-white">
+              <div className="muted text-sm mb-1">Confidence</div>
+              <div className="text-4xl font-bold text-foreground">
                 {confidence !== null ? `${confidence}/10` : '8/10'}
               </div>
             </div>
 
             {/* Professionalism */}
             <div>
-              <div className="text-gray-400 text-sm mb-1">Professionalism</div>
-              <div className="text-4xl font-bold text-white">
+              <div className="muted text-sm mb-1">Professionalism</div>
+              <div className="text-4xl font-bold text-foreground">
                 {professionalism !== null ? `${professionalism}/10` : '7/10'}
               </div>
             </div>
 
             {/* Real-time Tips */}
-            <div className="pt-4 border-t border-gray-700">
-              <div className="text-gray-400 text-sm mb-2">Real-time Tips</div>
+            <div className="pt-4 border-t border-surface-2">
+              <div className="muted text-sm mb-2">Real-time Tips</div>
               <div className="space-y-2">
                 {roastMessages.length > 0 ? (
                   roastMessages.slice(0, 2).map((msg, i) => (
-                    <div key={i} className="text-gray-300 text-sm">• {msg}</div>
+                    <div key={i} className="muted text-sm">• {msg}</div>
                   ))
                 ) : (
                   <>
-                    <div className="text-gray-300 text-sm">• Speak slower.</div>
-                    <div className="text-gray-300 text-sm">• Avoid &quot;like&quot;.</div>
+                    <div className="muted text-sm">• Speak slower.</div>
+                    <div className="muted text-sm">• Avoid &quot;like&quot;.</div>
                   </>
                 )}
               </div>
@@ -621,14 +616,14 @@ export default function InterviewPage() {
 
   if (initializing) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-gray-900">
-        <div className="text-lg text-white">Loading...</div>
+      <div className="flex items-center justify-center min-h-screen bg-surface">
+        <div className="text-lg text-foreground">Loading...</div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 p-6">
+    <div className="min-h-screen bg-surface p-6">
       <motion.div
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
@@ -665,14 +660,14 @@ export default function InterviewPage() {
 
         {/* Role Selection - Only visible when interview hasn't started */}
         {!isInterviewStarted && (
-          <div className="mt-8 bg-gray-800/50 rounded-xl p-6 border border-gray-700">
-            <label className="block text-sm font-medium text-gray-300 mb-3">
+          <div className="mt-8 bg-surface/50 rounded-xl p-6 border border-surface-2">
+              <label className="block text-sm font-medium muted mb-3">
               Select Interview Role
             </label>
             <select
               value={selectedRole}
               onChange={(e) => setSelectedRole(e.target.value)}
-              className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent mb-4"
+                className="w-full px-4 py-3 bg-surface-2 border border-surface-2 rounded-lg text-foreground focus:ring-2 focus:ring-accent/40 focus:border-transparent mb-4"
             >
               {INTERVIEW_ROLES.map((role) => (
                 <option key={role.id} value={role.id}>
@@ -684,7 +679,7 @@ export default function InterviewPage() {
             <button
               onClick={handleStartInterview}
               disabled={connecting}
-              className="w-full px-6 py-4 bg-indigo-600 text-white rounded-lg font-semibold text-lg hover:bg-indigo-700 transform transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-xl"
+              className="w-full px-6 py-4 bg-accent text-foreground rounded-lg font-semibold text-lg hover:bg-accent-2 transform transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-xl"
             >
               {connecting ? 'Connecting…' : '🚀 Start Interview'}
             </button>
@@ -693,16 +688,16 @@ export default function InterviewPage() {
 
         {showEndConfirm && (
           <div className="fixed inset-0 z-50 flex items-center justify-center">
-            <div className="absolute inset-0 bg-black/60" onClick={() => setShowEndConfirm(false)} />
-            <div className="bg-gray-800 rounded-xl shadow-2xl p-6 z-10 w-full max-w-md border border-gray-700">
-              <h3 className="text-lg font-semibold mb-2 text-white">End interview?</h3>
-              <p className="text-sm text-gray-300 mb-6">
+            <div className="absolute inset-0 bg-surface/60" onClick={() => setShowEndConfirm(false)} />
+            <div className="bg-surface-2 rounded-xl shadow-2xl p-6 z-10 w-full max-w-md border border-surface-2">
+              <h3 className="text-lg font-semibold mb-2 text-foreground">End interview?</h3>
+              <p className="text-sm muted mb-6">
                 Are you sure you want to end the interview? This will disconnect you from the room.
               </p>
               <div className="flex gap-3 justify-end">
                 <button
                   onClick={() => setShowEndConfirm(false)}
-                  className="px-4 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-600"
+                  className="px-4 py-2 bg-surface-2 text-foreground rounded-lg hover:bg-surface"
                 >
                   Cancel
                 </button>
@@ -711,7 +706,7 @@ export default function InterviewPage() {
                     setShowEndConfirm(false);
                     handleEndInterview();
                   }}
-                  className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+                  className="px-4 py-2 bg-danger text-foreground rounded-lg hover:bg-danger/90"
                 >
                   End Interview
                 </button>

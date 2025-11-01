@@ -14,7 +14,7 @@ function smallBarChart(data: number[]) {
     <svg viewBox={`0 0 ${data.length * 20} 40`} className="w-full h-14">
       {data.map((v, i) => {
         const h = (v / max) * 30;
-        return <rect key={i} x={i * 20 + 4} y={36 - h} width={12} height={h} rx={3} className="fill-sky-400" />;
+  return <rect key={i} x={i * 20 + 4} y={36 - h} width={12} height={h} rx={3} className="fill-accent" />;
       })}
     </svg>
   );
@@ -67,57 +67,55 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      <div className="bg-white rounded-2xl shadow-lg p-6">
+      <div className="bg-surface rounded-2xl shadow-lg p-6">
         <h2 className="text-xl font-semibold mb-2">Dashboard</h2>
-        <p className="text-sm text-gray-600 mb-4">Quick overview of recent interviews.</p>
+        <p className="text-sm muted mb-4">Quick overview of recent interviews.</p>
 
         <div className="grid grid-cols-3 gap-4">
-          <div className="p-4 bg-gray-50 rounded">
-            <div className="text-sm text-gray-500">Total Interviews</div>
+          <div className="p-4 bg-surface-2 rounded">
+            <div className="text-sm muted">Total Interviews</div>
             <div className="text-2xl font-bold">{history.length}</div>
           </div>
-          <div className="p-4 bg-gray-50 rounded">
-            <div className="text-sm text-gray-500">Recent (last 7 days)</div>
+          <div className="p-4 bg-surface-2 rounded">
+            <div className="text-sm muted">Recent (last 7 days)</div>
             <div className="text-2xl font-bold">{counts.reduce((a, b) => a + b, 0)}</div>
           </div>
-          <div className="p-4 bg-gray-50 rounded">
-            <div className="text-sm text-gray-500">Average Score</div>
+          <div className="p-4 bg-surface-2 rounded">
+            <div className="text-sm muted">Average Score</div>
             <div className="text-2xl font-bold">{history.length ? Math.round((history.reduce((s, r) => s + (r.score || 0), 0) / history.length)) : "—"}</div>
           </div>
         </div>
 
         <div className="mt-6">{smallBarChart(counts)}</div>
       </div>
-
-      <div className="bg-white rounded-2xl shadow-lg p-6">
+      <div className="bg-surface rounded-2xl shadow-lg p-6">
         <h3 className="text-lg font-semibold mb-3">Credits</h3>
         <div className="flex items-center gap-4">
-          <div className="text-sm text-gray-500">Your available credits</div>
+          <div className="text-sm muted">Your available credits</div>
           <div className="text-2xl font-bold">{credits === null ? '—' : credits}</div>
           <button
-            className="px-3 py-1 bg-gray-100 rounded text-sm"
+            className="px-3 py-1 bg-surface-2 rounded text-sm"
             onClick={() => fetchCredits()}
           >
             Refresh
           </button>
         </div>
-        <div className="mt-3 text-sm text-gray-500">Credits are granted automatically after successful payments.</div>
+        <div className="mt-3 text-sm muted">Credits are granted automatically after successful payments.</div>
       </div>
-
-      <div className="bg-white rounded-2xl shadow-lg p-6">
+      <div className="bg-surface rounded-2xl shadow-lg p-6">
         <h3 className="text-lg font-semibold mb-3">Post-interview analysis</h3>
-        <p className="text-sm text-gray-500 mb-4">Quick metrics from your recent interviews.</p>
+        <p className="text-sm muted mb-4">Quick metrics from your recent interviews.</p>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="p-4 bg-gray-50 rounded">
-            <div className="text-sm text-gray-500">Avg. Score</div>
+          <div className="p-4 bg-surface-2 rounded">
+            <div className="text-sm muted">Avg. Score</div>
             <div className="text-2xl font-bold">{history.length ? Math.round((history.reduce((s, r) => s + (r.score || 0), 0) / history.length)) : '—'}</div>
           </div>
-          <div className="p-4 bg-gray-50 rounded">
-            <div className="text-sm text-gray-500">Avg. Duration</div>
+          <div className="p-4 bg-surface-2 rounded">
+            <div className="text-sm muted">Avg. Duration</div>
             <div className="text-2xl font-bold">{history.length ? `${Math.round((history.reduce((s, r) => s + (r.durationSec || 0), 0) / history.length) / 60)}m` : '—'}</div>
           </div>
-          <div className="p-4 bg-gray-50 rounded">
-            <div className="text-sm text-gray-500">Filler words</div>
+          <div className="p-4 bg-surface-2 rounded">
+            <div className="text-sm muted">Filler words</div>
             <div className="text-2xl font-bold">{(function(){
               const fillers = ['um','uh','like','you know','actually'];
               let count = 0;
@@ -129,10 +127,9 @@ export default function DashboardPage() {
             })()}</div>
           </div>
         </div>
-        <div className="mt-4 text-sm text-gray-500">Click an interview in Recent Interviews for a detailed report.</div>
+        <div className="mt-4 text-sm muted">Click an interview in Recent Interviews for a detailed report.</div>
       </div>
-
-      <div className="bg-white rounded-2xl shadow-lg p-6">
+      <div className="bg-surface rounded-2xl shadow-lg p-6">
         <h3 className="text-lg font-semibold mb-3">Recent Interviews</h3>
         {recent.length ? (
           <ul className="space-y-3">
@@ -140,14 +137,14 @@ export default function DashboardPage() {
               <li key={r.id} className="flex items-center justify-between">
                 <div>
                   <div className="font-medium">{r.name}</div>
-                  <div className="text-sm text-gray-500"><ClientFormattedDate iso={r.date} /></div>
+                  <div className="text-sm muted"><ClientFormattedDate iso={r.date} /></div>
                 </div>
-                <div className="text-sm text-gray-700">{r.score ? `${r.score}/100` : "—"}</div>
+                <div className="text-sm text-foreground">{r.score ? `${r.score}/100` : "—"}</div>
               </li>
             ))}
           </ul>
         ) : (
-          <div className="text-sm text-gray-500">No interviews yet.</div>
+          <div className="text-sm muted">No interviews yet.</div>
         )}
       </div>
     </div>

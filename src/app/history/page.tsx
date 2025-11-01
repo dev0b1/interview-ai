@@ -76,12 +76,12 @@ export default function HistoryPage() {
   }
 
   return (
-    <div className="bg-white rounded-2xl shadow-lg p-6">
+    <div className="bg-surface rounded-2xl shadow-lg p-6">
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-xl font-semibold">History</h2>
         <div className="flex gap-2">
-          <button onClick={handleExport} className="px-3 py-1 border rounded">Export</button>
-          <button onClick={handleClear} className="px-3 py-1 bg-red-500 text-white rounded">Clear</button>
+          <button onClick={handleExport} className="px-3 py-1 border-surface-2 rounded">Export</button>
+          <button onClick={handleClear} className="px-3 py-1 bg-danger text-foreground rounded">Clear</button>
         </div>
       </div>
 
@@ -93,12 +93,12 @@ export default function HistoryPage() {
               <div className="font-medium mb-1">Uploading</div>
               <ul className="space-y-2">
                 {pending.map((p) => (
-                  <li key={p.id} className="flex items-center justify-between p-2 border rounded bg-yellow-50">
+                  <li key={p.id} className="flex items-center justify-between p-2 border-surface-2 rounded bg-surface-2">
                     <div>
                       <div className="font-medium">Pending upload</div>
-                      <div className="text-xs text-gray-500">{new Date(p.ts).toLocaleString()}</div>
+                      <div className="text-xs muted">{new Date(p.ts).toLocaleString()}</div>
                     </div>
-                    <div className="text-sm text-gray-700">Uploading…</div>
+                    <div className="text-sm text-foreground">Uploading…</div>
                   </li>
                 ))}
               </ul>
@@ -107,27 +107,27 @@ export default function HistoryPage() {
         </div>
         <ul className="space-y-3">
           {list.map((r) => (
-            <li key={r.id} className="flex items-center justify-between p-3 border rounded">
+            <li key={r.id} className="flex items-center justify-between p-3 border-surface-2 rounded">
               <div>
                 <div className="font-medium">{r.name}</div>
-                <div className="text-sm text-gray-500"><ClientFormattedDate iso={r.date} /></div>
+                <div className="text-sm muted"><ClientFormattedDate iso={r.date} /></div>
               </div>
               <div className="flex items-center gap-3">
-                <div className="text-sm text-gray-700">{r.score ? `${r.score}/100` : pendingIds.has(r.id) ? 'Uploading…' : '—'}</div>
+                <div className="text-sm text-foreground">{r.score ? `${r.score}/100` : pendingIds.has(r.id) ? 'Uploading…' : '—'}</div>
                 {remoteInfo[r.id]?.videoUrl ? (
-                  <a href={remoteInfo[r.id].videoUrl} target="_blank" rel="noreferrer" className="px-2 py-1 text-sm border rounded text-sky-600">Recording</a>
+                  <a href={remoteInfo[r.id].videoUrl} target="_blank" rel="noreferrer" className="px-2 py-1 text-sm border-surface-2 rounded text-accent">Recording</a>
                 ) : remoteInfo[r.id]?.audioUrl ? (
-                  <a href={remoteInfo[r.id].audioUrl} target="_blank" rel="noreferrer" className="px-2 py-1 text-sm border rounded text-sky-600">Recording</a>
+                  <a href={remoteInfo[r.id].audioUrl} target="_blank" rel="noreferrer" className="px-2 py-1 text-sm border-surface-2 rounded text-accent">Recording</a>
                 ) : null}
-                <button onClick={() => window.location.href = `/interviews/${r.id}`} disabled={pendingIds.has(r.id)} className="px-2 py-1 text-sm border rounded {pendingIds.has(r.id) ? 'opacity-50 pointer-events-none' : ''}">View</button>
-                <button onClick={() => handleDelete(r.id)} className="px-2 py-1 text-sm border rounded">Delete</button>
+                <button onClick={() => window.location.href = `/interviews/${r.id}`} disabled={pendingIds.has(r.id)} className="px-2 py-1 text-sm border-surface-2 rounded">View</button>
+                <button onClick={() => handleDelete(r.id)} className="px-2 py-1 text-sm border-surface-2 rounded">Delete</button>
               </div>
             </li>
           ))}
         </ul>
         </>
       ) : (
-        <div className="text-sm text-gray-500">No saved interviews.</div>
+        <div className="text-sm muted">No saved interviews.</div>
       )}
     </div>
   );

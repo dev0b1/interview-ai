@@ -33,9 +33,9 @@ export default function ShareControls({ audioUrl }: { audioUrl?: string | null }
     <div className="flex items-center gap-3 mt-2">
       {audioUrl ? (
         <>
-          <button onClick={handleShare} className="px-3 py-1 bg-sky-600 text-white rounded text-sm">Share</button>
-          <button onClick={handleCopy} className="px-3 py-1 border rounded text-sm">Copy link</button>
-          <a href={audioUrl} target="_blank" rel="noreferrer" className="px-3 py-1 bg-gray-100 rounded text-sm">Open</a>
+          <button onClick={handleShare} className="px-3 py-1 bg-accent text-foreground rounded text-sm">Share</button>
+          <button onClick={handleCopy} className="px-3 py-1 border border-surface-2 rounded text-sm text-foreground">Copy link</button>
+          <a href={audioUrl} target="_blank" rel="noreferrer" className="px-3 py-1 bg-surface-2 text-foreground rounded text-sm">Open</a>
         </>
       ) : null}
     </div>

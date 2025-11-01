@@ -79,31 +79,31 @@ export default function InterviewDetailClient({ id }: { id: string }) {
 
   return (
     <div className="p-6">
-      <h1 className="text-2xl font-bold mb-2">Interview {id}</h1>
-      <h2 className="text-lg font-semibold">Metrics</h2>
+      <h1 className="text-2xl font-bold mb-2 text-foreground">Interview {id}</h1>
+      <h2 className="text-lg font-semibold text-foreground">Metrics</h2>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-        <div className="p-3 bg-gray-50 rounded">
-          <div className="text-sm text-gray-500">Filler words</div>
-          <div className="text-2xl font-bold">{fillerCount}</div>
+        <div className="p-3 bg-surface-2 rounded">
+          <div className="text-sm muted">Filler words</div>
+          <div className="text-2xl font-bold text-foreground">{fillerCount}</div>
         </div>
-        <div className="p-3 bg-gray-50 rounded">
-          <div className="text-sm text-gray-500">Pauses (&gt;2s)</div>
-          <div className="text-2xl font-bold">{pauseCount}</div>
+        <div className="p-3 bg-surface-2 rounded">
+          <div className="text-sm muted">Pauses (&gt;2s)</div>
+          <div className="text-2xl font-bold text-foreground">{pauseCount}</div>
         </div>
-        <div className="p-3 bg-gray-50 rounded">
-          <div className="text-sm text-gray-500">Speakers</div>
-          <div className="text-2xl font-bold">{Object.keys(speakerMap).length}</div>
+        <div className="p-3 bg-surface-2 rounded">
+          <div className="text-sm muted">Speakers</div>
+          <div className="text-2xl font-bold text-foreground">{Object.keys(speakerMap).length}</div>
         </div>
       </div>
-      <pre className="bg-gray-100 p-3 rounded">{JSON.stringify((analysis.metrics as unknown) ?? analysis, null, 2)}</pre>
-      <h2 className="text-lg font-semibold mt-4">AI Feedback</h2>
-      <pre className="bg-gray-50 p-3 rounded">{String((analysis.ai_feedback as unknown) || (analysis.feedback as unknown) || '')}</pre>
-      <h2 className="text-lg font-semibold mt-4">Transcript</h2>
+      <pre className="bg-surface p-3 rounded text-foreground">{JSON.stringify((analysis.metrics as unknown) ?? analysis, null, 2)}</pre>
+      <h2 className="text-lg font-semibold mt-4 text-foreground">AI Feedback</h2>
+      <pre className="bg-surface-2 p-3 rounded text-foreground">{String((analysis.ai_feedback as unknown) || (analysis.feedback as unknown) || '')}</pre>
+      <h2 className="text-lg font-semibold mt-4 text-foreground">Transcript</h2>
       {videoUrl ? (
         <div className="mt-3 mb-4">
           <video controls src={videoUrl} className="w-full" />
           <div className="mt-2 flex items-center justify-between">
-            <a className="text-sm text-sky-600" href={videoUrl} target="_blank" rel="noreferrer">Download video</a>
+            <a className="text-sm text-accent" href={videoUrl} target="_blank" rel="noreferrer">Download video</a>
             <ShareControls audioUrl={videoUrl} />
           </div>
         </div>
@@ -111,16 +111,16 @@ export default function InterviewDetailClient({ id }: { id: string }) {
         <div className="mt-3 mb-4">
           <audio controls src={audioUrl} className="w-full" />
           <div className="mt-2 flex items-center justify-between">
-            <a className="text-sm text-sky-600" href={audioUrl} target="_blank" rel="noreferrer">Download audio</a>
+            <a className="text-sm text-accent" href={audioUrl} target="_blank" rel="noreferrer">Download audio</a>
             <ShareControls audioUrl={audioUrl} />
           </div>
         </div>
       ) : null}
       <div className="space-y-2 mt-2">
         {transcript.map((t: TranscriptItem, i: number) => (
-          <div key={i} className="p-2 border rounded">
-            <div className="text-sm text-gray-500">{t.speaker} • {t.ts}</div>
-            <div>{t.text}</div>
+          <div key={i} className="p-2 border border-surface-2 rounded bg-surface">
+            <div className="text-sm muted">{t.speaker} • {t.ts}</div>
+            <div className="text-foreground">{t.text}</div>
           </div>
         ))}
       </div>
@@ -128,9 +128,9 @@ export default function InterviewDetailClient({ id }: { id: string }) {
         <h2 className="text-lg font-semibold">Speaker segments</h2>
         <div className="mt-2 space-y-2">
           {Object.keys(speakerMap).map((s) => (
-            <div key={s} className="p-2 border rounded">
-              <div className="font-medium">{s}</div>
-              <div className="text-sm text-gray-500">Lines: {speakerMap[s].lines} • Words: {speakerMap[s].words}</div>
+            <div key={s} className="p-2 border border-surface-2 rounded bg-surface">
+              <div className="font-medium text-foreground">{s}</div>
+              <div className="text-sm muted">Lines: {speakerMap[s].lines} • Words: {speakerMap[s].words}</div>
             </div>
           ))}
         </div>

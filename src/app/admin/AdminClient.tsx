@@ -111,20 +111,20 @@ export default function AdminClient() {
       <h1 className="text-2xl font-semibold mb-4">Admin (Basic)</h1>
 
       <div className="mb-4 grid grid-cols-3 gap-4">
-        <div className="p-3 bg-gray-50 rounded">
-          <div className="text-sm text-gray-500">Total users</div>
-          <div className="text-xl font-medium">{(stats.totalUsers || profiles.length) ?? '—'}</div>
+        <div className="p-3 bg-surface-2 rounded">
+          <div className="text-sm muted">Total users</div>
+          <div className="text-xl font-medium text-foreground">{(stats.totalUsers || profiles.length) ?? '—'}</div>
         </div>
-        <div className="p-3 bg-gray-50 rounded">
-          <div className="text-sm text-gray-500">Total interviews</div>
-          <div className="text-xl font-medium">{stats.totalInterviews ?? '—'}</div>
+        <div className="p-3 bg-surface-2 rounded">
+          <div className="text-sm muted">Total interviews</div>
+          <div className="text-xl font-medium text-foreground">{stats.totalInterviews ?? '—'}</div>
         </div>
-        <div className="p-3 bg-gray-50 rounded">
-          <div className="text-sm text-gray-500">Total revenue</div>
-          <div className="text-xl font-medium">
+        <div className="p-3 bg-surface-2 rounded">
+          <div className="text-sm muted">Total revenue</div>
+          <div className="text-xl font-medium text-foreground">
             {typeof stats.totalRevenue === 'number' ? `$${stats.totalRevenue.toFixed(2)}` : '—'}
           </div>
-          <div className="text-xs text-gray-500 mt-2">
+          <div className="text-xs muted mt-2">
             Last 5 interviews:{' '}
             {(stats.last5 || [])
               .map((i) => `${i.owner || i.id} · ${i.created_at ? new Date(i.created_at).toLocaleString() : ''}`)
@@ -138,9 +138,9 @@ export default function AdminClient() {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search email or name"
-          className="px-2 py-1 border rounded"
+          className="px-2 py-1 border border-surface-2 rounded bg-transparent text-foreground"
         />
-        <button onClick={() => loadProfiles(query)} className="px-3 py-1 bg-sky-600 text-white rounded">
+  <button onClick={() => loadProfiles(query)} className="px-3 py-1 bg-accent text-foreground rounded">
           Search
         </button>
         <button
@@ -148,13 +148,13 @@ export default function AdminClient() {
             setQuery('');
             loadProfiles();
           }}
-          className="px-3 py-1 bg-gray-200 rounded"
+          className="px-3 py-1 bg-surface-2 text-foreground rounded"
         >
           Clear
         </button>
       </div>
 
-      {error && <div className="text-red-600 mb-4">{error}</div>}
+  {error && <div className="text-danger mb-4">{error}</div>}
 
       <section className="mb-6">
         <h2 className="font-semibold">Profiles</h2>
@@ -165,22 +165,22 @@ export default function AdminClient() {
             {profiles.map((p) => (
               <li key={p.id} className="py-1 flex items-center justify-between">
                 <div>
-                  <span className="font-medium">{p.display_name || p.email || p.id}</span>
+                  <span className="font-medium text-foreground">{p.display_name || p.email || p.id}</span>
                   {p.is_admin && (
-                    <span className="ml-2 text-xs bg-green-100 text-green-800 px-2 py-0.5 rounded">ADMIN</span>
+                    <span className="ml-2 text-xs bg-success/20 text-success px-2 py-0.5 rounded">ADMIN</span>
                   )}
-                  <div className="text-xs text-gray-500">
+                  <div className="text-xs muted">
                     {p.email} · {p.created_at ? new Date(p.created_at).toLocaleDateString() : ''}
                   </div>
                 </div>
                 <div className="flex items-center gap-4">
-                  <div className="text-sm text-gray-600">Interviews: {p.interview_count ?? 0}</div>
-                  <button className="text-sm text-sky-600" onClick={() => loadInterviews(p.id)}>
+                  <div className="text-sm muted">Interviews: {p.interview_count ?? 0}</div>
+                  <button className="text-sm text-accent" onClick={() => loadInterviews(p.id)}>
                     Show interviews
                   </button>
                   {!p.is_admin && (
                     <button
-                      className="text-sm text-white bg-amber-600 px-2 py-1 rounded"
+                      className="text-sm text-foreground bg-accent px-2 py-1 rounded"
                       onClick={async () => {
                         setError(null);
                         setLoading(true);
@@ -219,7 +219,7 @@ export default function AdminClient() {
       <section>
         <h2 className="font-semibold">Interviews</h2>
         {interviews.length === 0 ? (
-          <div className="text-sm text-gray-500">No interviews loaded</div>
+          <div className="text-sm muted">No interviews loaded</div>
         ) : (
           <ul>
             {interviews.map((iv) => (

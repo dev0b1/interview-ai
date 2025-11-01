@@ -8,14 +8,14 @@ const fadeUp = { hidden: { opacity: 0, y: 12 }, visible: { opacity: 1, y: 0 } };
 
 export default function LandingPage() {
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-transparent text-foreground">
       {/* Navigation */}
-      <nav className="border-b border-gray-200">
+      <nav className="border-b border-surface-2">
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
-          <div className="text-xl font-semibold text-gray-900">InterviewAI</div>
+          <div className="text-xl font-semibold text-foreground">InterviewAI</div>
           <div className="flex items-center gap-6">
-            <Link href="/auth" className="text-gray-600 hover:text-gray-900">Sign in</Link>
-            <Link href="/interview" className="px-4 py-2 bg-gray-900 text-white rounded-md hover:bg-gray-800">
+            <Link href="/auth" className="muted hover:text-foreground">Sign in</Link>
+            <Link href="/interview" className="px-4 py-2 bg-accent text-foreground rounded-md hover:bg-accent-2">
               Get Started
             </Link>
           </div>
@@ -24,7 +24,7 @@ export default function LandingPage() {
 
       <main>
         {/* Hero Section */}
-        <section className="max-w-7xl mx-auto px-6 pt-20 pb-24">
+      <section className="max-w-7xl mx-auto px-6 pt-20 pb-24">
           <motion.div 
             initial="hidden"
             animate="visible"
@@ -32,45 +32,45 @@ export default function LandingPage() {
             transition={{ duration: 0.5 }}
             className="max-w-3xl"
           >
-            <h1 className="text-6xl font-bold text-gray-900 mb-6 leading-tight">
+            <h1 className="text-6xl font-bold text-foreground mb-6 leading-tight">
               Ace your next interview with AI-powered practice
             </h1>
-            <p className="text-xl text-gray-600 mb-10 leading-relaxed">
+            <p className="text-xl muted mb-10 leading-relaxed">
               Practice real-time voice interviews, get instant feedback on your performance, and track your improvement over time. Build confidence before the interview that matters.
             </p>
             <div className="flex items-center gap-4">
               <Link 
                 href="/interview" 
-                className="px-8 py-4 bg-gray-900 text-white font-medium rounded-lg hover:bg-gray-800 transition-colors"
+                className="px-8 py-4 bg-accent text-foreground font-medium rounded-lg hover:bg-accent-2 transition-colors"
               >
                 Start practicing for free
               </Link>
               <Link 
                 href="#demo" 
-                className="px-8 py-4 text-gray-700 font-medium hover:text-gray-900"
+                className="px-8 py-4 muted font-medium hover:text-foreground"
               >
                 See how it works →
               </Link>
             </div>
-            <p className="text-sm text-gray-500 mt-6">No credit card required • Unlimited practice sessions</p>
+            <p className="text-sm muted mt-6">No credit card required • Unlimited practice sessions</p>
           </motion.div>
         </section>
 
         {/* Stats Section */}
-        <section className="border-y border-gray-200 bg-gray-50">
+        <section className="border-y border-surface-2 bg-surface">
           <div className="max-w-7xl mx-auto px-6 py-16">
             <div className="grid grid-cols-3 gap-12">
               <div>
-                <div className="text-4xl font-bold text-gray-900 mb-2">12,000+</div>
-                <div className="text-gray-600">Practice interviews completed</div>
+                <div className="text-4xl font-bold text-foreground mb-2">12,000+</div>
+                <div className="muted">Practice interviews completed</div>
               </div>
               <div>
-                <div className="text-4xl font-bold text-gray-900 mb-2">89%</div>
-                <div className="text-gray-600">Users report improved confidence</div>
+                <div className="text-4xl font-bold text-foreground mb-2">89%</div>
+                <div className="muted">Users report improved confidence</div>
               </div>
               <div>
-                <div className="text-4xl font-bold text-gray-900 mb-2">4.8/5</div>
-                <div className="text-gray-600">Average user rating</div>
+                <div className="text-4xl font-bold text-foreground mb-2">4.8/5</div>
+                <div className="muted">Average user rating</div>
               </div>
             </div>
           </div>
@@ -85,37 +85,37 @@ export default function LandingPage() {
             variants={fadeUp}
             transition={{ duration: 0.5 }}
           >
-            <h2 className="text-4xl font-bold text-gray-900 mb-16">Everything you need to prepare</h2>
+            <h2 className="text-4xl font-bold text-foreground mb-16">Everything you need to prepare</h2>
             
             <div className="grid grid-cols-2 gap-16">
               <div>
-                <div className="w-12 h-12 bg-gray-900 rounded-lg mb-6"></div>
-                <h3 className="text-2xl font-semibold text-gray-900 mb-4">Real-time voice interviews</h3>
-                <p className="text-gray-600 leading-relaxed">
+                <div className="w-12 h-12 bg-accent rounded-lg mb-6" />
+                <h3 className="text-2xl font-semibold text-foreground mb-4">Real-time voice interviews</h3>
+                <p className="muted leading-relaxed">
                   Practice with an AI interviewer that conducts natural conversations. Answer questions out loud and get follow-ups based on your responses, just like a real interview.
                 </p>
               </div>
 
               <div>
-                <div className="w-12 h-12 bg-gray-900 rounded-lg mb-6"></div>
-                <h3 className="text-2xl font-semibold text-gray-900 mb-4">Instant performance analysis</h3>
-                <p className="text-gray-600 leading-relaxed">
+                <div className="w-12 h-12 bg-accent rounded-lg mb-6" />
+                <h3 className="text-2xl font-semibold text-foreground mb-4">Instant performance analysis</h3>
+                <p className="muted leading-relaxed">
                   Get detailed feedback immediately after each interview. See your confidence score, speaking pace, filler word usage, and receive personalized tips to improve.
                 </p>
               </div>
 
               <div>
-                <div className="w-12 h-12 bg-gray-900 rounded-lg mb-6"></div>
-                <h3 className="text-2xl font-semibold text-gray-900 mb-4">Interview transcripts</h3>
-                <p className="text-gray-600 leading-relaxed">
+                <div className="w-12 h-12 bg-accent rounded-lg mb-6" />
+                <h3 className="text-2xl font-semibold text-foreground mb-4">Interview transcripts</h3>
+                <p className="muted leading-relaxed">
                   Review full transcripts of every interview. Analyze your answers, identify patterns in your responses, and refine your talking points for real interviews.
                 </p>
               </div>
 
               <div>
-                <div className="w-12 h-12 bg-gray-900 rounded-lg mb-6"></div>
-                <h3 className="text-2xl font-semibold text-gray-900 mb-4">Progress tracking</h3>
-                <p className="text-gray-600 leading-relaxed">
+                <div className="w-12 h-12 bg-accent rounded-lg mb-6" />
+                <h3 className="text-2xl font-semibold text-foreground mb-4">Progress tracking</h3>
+                <p className="muted leading-relaxed">
                   Track your improvement across multiple practice sessions. See how your confidence and clarity scores increase as you practice more.
                 </p>
               </div>
@@ -124,7 +124,7 @@ export default function LandingPage() {
         </section>
 
         {/* How it works */}
-        <section className="bg-gray-900 text-white py-24">
+        <section className="bg-surface-2 text-foreground py-24">
           <div className="max-w-7xl mx-auto px-6">
             <motion.div
               initial="hidden"
@@ -133,32 +133,32 @@ export default function LandingPage() {
               variants={fadeUp}
               transition={{ duration: 0.5 }}
             >
-              <h2 className="text-4xl font-bold mb-6">How it works</h2>
-              <p className="text-xl text-gray-400 mb-16 max-w-2xl">
+              <h2 className="text-4xl font-bold mb-6 text-foreground">How it works</h2>
+              <p className="text-xl muted mb-16 max-w-2xl">
                 Get interview-ready in minutes, not weeks
               </p>
 
               <div className="grid grid-cols-3 gap-12">
                 <div>
-                  <div className="text-6xl font-bold text-gray-700 mb-6">01</div>
-                  <h3 className="text-xl font-semibold mb-3">Choose your role</h3>
-                  <p className="text-gray-400 leading-relaxed">
+                  <div className="text-6xl font-bold muted mb-6">01</div>
+                  <h3 className="text-xl font-semibold mb-3 text-foreground">Choose your role</h3>
+                  <p className="muted leading-relaxed">
                     Select the type of role you're interviewing for—software engineering, product management, consulting, or general behavioral questions.
                   </p>
                 </div>
 
                 <div>
-                  <div className="text-6xl font-bold text-gray-700 mb-6">02</div>
+                  <div className="text-6xl font-bold muted mb-6">02</div>
                   <h3 className="text-xl font-semibold mb-3">Start the interview</h3>
-                  <p className="text-gray-400 leading-relaxed">
+                  <p className="muted leading-relaxed">
                     Click record and begin speaking. The AI interviewer will ask questions and respond naturally to your answers in real-time.
                   </p>
                 </div>
 
                 <div>
-                  <div className="text-6xl font-bold text-gray-700 mb-6">03</div>
+                  <div className="text-6xl font-bold muted mb-6">03</div>
                   <h3 className="text-xl font-semibold mb-3">Get feedback</h3>
-                  <p className="text-gray-400 leading-relaxed">
+                  <p className="muted leading-relaxed">
                     Review your performance, read the transcript, and see actionable insights to improve for your next practice session.
                   </p>
                 </div>
@@ -167,7 +167,7 @@ export default function LandingPage() {
               <div className="mt-16">
                 <Link 
                   href="/interview" 
-                  className="inline-block px-8 py-4 bg-white text-gray-900 font-medium rounded-lg hover:bg-gray-100 transition-colors"
+                  className="inline-block px-8 py-4 bg-accent text-foreground font-medium rounded-lg hover:bg-accent-2 transition-colors"
                 >
                   Try it now
                 </Link>
@@ -185,44 +185,44 @@ export default function LandingPage() {
             variants={fadeUp}
             transition={{ duration: 0.5 }}
           >
-            <h2 className="text-4xl font-bold text-gray-900 mb-16">What people are saying</h2>
+            <h2 className="text-4xl font-bold text-foreground mb-16">What people are saying</h2>
             
             <div className="grid grid-cols-3 gap-8">
-              <div className="border border-gray-200 rounded-lg p-8">
-                <p className="text-gray-700 mb-6 leading-relaxed">
+              <div className="border border-surface-2 rounded-lg p-8">
+                <p className="text-foreground mb-6 leading-relaxed">
                   "Practicing out loud made such a difference. I felt way more prepared and confident going into my real interviews."
                 </p>
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-gray-300 rounded-full"></div>
+                  <div className="w-10 h-10 bg-surface-2 rounded-full"></div>
                   <div>
-                    <div className="font-medium text-gray-900">Sarah Chen</div>
-                    <div className="text-sm text-gray-500">Software Engineer</div>
+                    <div className="font-medium text-foreground">Sarah Chen</div>
+                    <div className="text-sm muted">Software Engineer</div>
                   </div>
                 </div>
               </div>
 
-              <div className="border border-gray-200 rounded-lg p-8">
-                <p className="text-gray-700 mb-6 leading-relaxed">
+              <div className="border border-surface-2 rounded-lg p-8">
+                <p className="text-foreground mb-6 leading-relaxed">
                   "The feedback on filler words was eye-opening. I had no idea I said 'um' that much until I saw the data."
                 </p>
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-gray-300 rounded-full"></div>
+                  <div className="w-10 h-10 bg-surface-2 rounded-full"></div>
                   <div>
-                    <div className="font-medium text-gray-900">Michael Torres</div>
-                    <div className="text-sm text-gray-500">Product Manager</div>
+                    <div className="font-medium text-foreground">Michael Torres</div>
+                    <div className="text-sm muted">Product Manager</div>
                   </div>
                 </div>
               </div>
 
-              <div className="border border-gray-200 rounded-lg p-8">
-                <p className="text-gray-700 mb-6 leading-relaxed">
+              <div className="border border-surface-2 rounded-lg p-8">
+                <p className="text-foreground mb-6 leading-relaxed">
                   "Being able to practice anytime without scheduling with another person was a game changer for my prep."
                 </p>
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-gray-300 rounded-full"></div>
+                  <div className="w-10 h-10 bg-surface-2 rounded-full"></div>
                   <div>
-                    <div className="font-medium text-gray-900">Priya Patel</div>
-                    <div className="text-sm text-gray-500">Consultant</div>
+                    <div className="font-medium text-foreground">Priya Patel</div>
+                    <div className="text-sm muted">Consultant</div>
                   </div>
                 </div>
               </div>
@@ -231,7 +231,7 @@ export default function LandingPage() {
         </section>
 
         {/* Final CTA */}
-        <section className="border-t border-gray-200 bg-gray-50">
+  <section className="border-t border-surface-2 bg-surface-2">
           <div className="max-w-7xl mx-auto px-6 py-24 text-center">
             <motion.div
               initial="hidden"
@@ -240,32 +240,32 @@ export default function LandingPage() {
               variants={fadeUp}
               transition={{ duration: 0.5 }}
             >
-              <h2 className="text-5xl font-bold text-gray-900 mb-6">
+              <h2 className="text-5xl font-bold text-foreground mb-6">
                 Start practicing today
               </h2>
-              <p className="text-xl text-gray-600 mb-10 max-w-2xl mx-auto">
+              <p className="text-xl muted mb-10 max-w-2xl mx-auto">
                 Join thousands of job seekers who are using AI to prepare for their interviews and land their dream jobs.
               </p>
               <Link 
                 href="/interview" 
-                className="inline-block px-8 py-4 bg-gray-900 text-white font-medium rounded-lg hover:bg-gray-800 transition-colors"
+                className="inline-block px-8 py-4 bg-accent text-foreground font-medium rounded-lg hover:bg-accent-2 transition-colors"
               >
                 Start your first interview
               </Link>
-              <p className="text-sm text-gray-500 mt-6">Free to start • No credit card required</p>
+              <p className="text-sm muted mt-6">Free to start • No credit card required</p>
             </motion.div>
           </div>
         </section>
 
         {/* Footer */}
-        <footer className="border-t border-gray-200">
+        <footer className="border-t border-surface-2">
           <div className="max-w-7xl mx-auto px-6 py-12">
             <div className="flex items-center justify-between">
-              <div className="text-gray-600">© 2025 InterviewAI. All rights reserved.</div>
+              <div className="muted">© 2025 InterviewAI. All rights reserved.</div>
               <div className="flex items-center gap-8">
-                <Link href="/privacy" className="text-gray-600 hover:text-gray-900">Privacy</Link>
-                <Link href="/terms" className="text-gray-600 hover:text-gray-900">Terms</Link>
-                <Link href="/contact" className="text-gray-600 hover:text-gray-900">Contact</Link>
+                <Link href="/privacy" className="muted hover:text-foreground">Privacy</Link>
+                <Link href="/terms" className="muted hover:text-foreground">Terms</Link>
+                <Link href="/contact" className="muted hover:text-foreground">Contact</Link>
               </div>
             </div>
           </div>

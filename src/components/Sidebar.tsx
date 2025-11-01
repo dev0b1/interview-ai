@@ -15,12 +15,12 @@ export default function Sidebar({ onClose }: { onClose?: () => void } = {}) {
         onClick={() => onClose && onClose()}
         className={`flex items-center gap-3 px-3 py-2 rounded-md font-medium transition ${
           active
-            ? "bg-gradient-to-r from-indigo-600 to-sky-600 text-white shadow"
-            : "text-gray-700 hover:bg-gray-100"
+            ? "bg-gradient-to-r from-accent to-accent-2 text-foreground shadow"
+            : "text-muted hover:bg-surface-2"
         }`}
       >
-        <span className="w-5 h-5">{icon}</span>
-        <span>{label}</span>
+        <span className="w-5 h-5 text-foreground">{icon}</span>
+        <span className="text-foreground">{label}</span>
       </Link>
     );
   }

@@ -25,10 +25,10 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
   }, [mobileOpen]);
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white text-foreground">
+    <div className="min-h-screen bg-transparent text-foreground">
       <div className="flex">
         {/* Sidebar for md+ screens */}
-          <aside className="hidden md:flex md:flex-col md:w-72 bg-white/60 backdrop-blur border-r border-gray-100 p-6 sticky top-0 h-screen">
+          <aside className="hidden md:flex md:flex-col md:w-72 bg-surface/60 backdrop-blur border-r border-surface-2 p-6 sticky top-0 h-screen">
             <div className="flex-1">
               <div className="text-2xl font-bold mb-6">InterviewAI</div>
               <div className="space-y-6">
@@ -37,10 +37,10 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
             </div>
             <div className="mt-6">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-gray-200" />
+                <div className="w-10 h-10 rounded-full bg-surface-2" />
                 <div>
-                  <div className="text-sm font-medium">Elisha</div>
-                  <div className="text-xs text-gray-500">You</div>
+                  <div className="text-sm font-medium text-foreground">Elisha</div>
+                  <div className="text-xs muted">You</div>
                 </div>
               </div>
             </div>
@@ -53,15 +53,15 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
             <button
               aria-label="Open menu"
               onClick={() => setMobileOpen(true)}
-              className="p-2 rounded-md bg-white/80 shadow"
+              className="p-2 rounded-md bg-surface-2 shadow"
             >
               <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
               </svg>
             </button>
             <div className="text-sm">
-              <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-gray-100 text-gray-700">
-                <span className="w-2 h-2 bg-red-500 rounded-full" />
+              <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-surface-2 text-foreground">
+                <span className="w-2 h-2 bg-danger rounded-full" />
                 Disconnected
               </span>
             </div>
@@ -69,10 +69,10 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
 
           {/* Top header for main area (md+) */}
           <header className="hidden md:flex items-center justify-between mb-6">
-            <h1 className="text-2xl font-semibold">Live Interview</h1>
+            <h1 className="text-2xl font-semibold text-foreground">Live Interview</h1>
             <div className="text-sm">
-              <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-gray-100 text-gray-700">
-                <span className="w-2 h-2 bg-red-500 rounded-full" />
+              <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-surface-2 text-foreground">
+                <span className="w-2 h-2 bg-danger rounded-full" />
                 Disconnected
               </span>
             </div>
@@ -85,8 +85,8 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
       {/* Mobile slide-over */}
       {mobileOpen && (
         <div className="fixed inset-0 z-50">
-          <div className="absolute inset-0 bg-black/30" onClick={() => setMobileOpen(false)} />
-          <div className="absolute left-0 top-0 bottom-0 w-72 bg-white p-4 shadow-lg overflow-auto">
+          <div className="absolute inset-0 bg-surface/30" onClick={() => setMobileOpen(false)} />
+          <div className="absolute left-0 top-0 bottom-0 w-72 bg-surface-2 p-4 shadow-lg overflow-auto border-r border-surface-2">
             <div className="flex items-center justify-between mb-4">
               <div className="text-lg font-bold">InterviewAI</div>
               <button onClick={() => setMobileOpen(false)} aria-label="Close menu" className="p-2 rounded-md">
