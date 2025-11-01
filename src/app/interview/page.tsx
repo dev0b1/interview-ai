@@ -365,8 +365,15 @@ function InterviewRoomContent({
   const room = useRoomContext();
   const remotes = useRemoteParticipants();
   const { localParticipant } = useLocalParticipant();
-  const tracks = useTracks([Track.Source.Microphone]);
-  const microphoneTrack = tracks.find((t) => t.source === Track.Source.Microphone);
+  
+  // Get AI agent's audio track (remote participant)
+  const remoteTracks = useTracks([Track.Source.Microphone], {
+    onlySubscribed: true,
+  });
+  const agentAudioTrack = remoteTracks.find(
+    (trackRef) => trackRef.participant.identity !== localParticipant?.identity
+  );
+  
   const [showSummary, setShowSummary] = React.useState(false);
 
   const connectionState = room?.state as unknown as string | undefined;
@@ -418,13 +425,13 @@ function InterviewRoomContent({
             )}
           </div>
 
-          {/* Audio Visualizer */}
-          {isInterviewStarted && microphoneTrack && (
+          {/* Audio Visualizer - Shows AI Agent Speaking */}
+          {isInterviewStarted && agentAudioTrack && (
             <div className="w-full max-w-md">
               <BarVisualizer 
                 state="speaking"
                 barCount={7}
-                trackRef={microphoneTrack}
+                trackRef={agentAudioTrack}
                 className="h-24"
                 style={{
                   '--lk-va-bar-width': '12px',
@@ -435,6 +442,15 @@ function InterviewRoomContent({
               <p className="text-center text-gray-400 text-sm mt-4">
                 Detecting filler words, tone and clarity
               </p>
+            </div>
+          )}
+          
+          {/* Fallback when agent hasn't joined yet */}
+          {isInterviewStarted && !agentAudioTrack && (
+            <div className="w-full max-w-md">
+              <div className="h-24 flex items-center justify-center">
+                <p className="text-gray-500 text-sm">Waiting for AI agent to join...</p>
+              </div>
             </div>
           )}
 
