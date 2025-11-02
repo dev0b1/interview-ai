@@ -412,7 +412,7 @@ function InterviewRoomContent({
       {/* Main Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Center: AI Avatar + Audio Viz - Card Background */}
-        <div className="lg:col-span-2 bg-surface/50 rounded-xl p-8 border border-surface-2 flex flex-col items-center justify-center">
+        <div className="lg:col-span-2 bg-surface/50 rounded-xl p-8 border-2 border-accent/30 flex flex-col items-center justify-center">
           {/* AI Avatar */}
           <div className="relative mb-6">
             <div className="w-48 h-48 rounded-full bg-gradient-to-br from-accent via-accent-2 to-accent-2 flex items-center justify-center shadow-xl">
@@ -445,8 +445,13 @@ function InterviewRoomContent({
           {/* Fallback when agent hasn't joined yet */}
           {isInterviewStarted && !agentAudioTrack && (
             <div className="w-full max-w-md">
-              <div className="h-20 flex items-center justify-center">
-                <p className="muted text-sm">Waiting for AI agent to join...</p>
+              <div className="h-20 flex flex-col items-center justify-center gap-3">
+                <div className="flex gap-1">
+                  <div className="w-2 h-2 bg-accent rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+                  <div className="w-2 h-2 bg-accent rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
+                  <div className="w-2 h-2 bg-accent rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+                </div>
+                <p className="text-foreground text-sm font-medium">Waiting for AI agent to join...</p>
               </div>
             </div>
           )}
@@ -463,40 +468,40 @@ function InterviewRoomContent({
 
         {/* Right: Metrics Panel - Only show when interview is active */}
         {isInterviewStarted && (
-          <div className="bg-surface/50 rounded-xl p-6 border border-surface-2">
+          <div className="bg-surface/50 rounded-xl p-6 border-2 border-accent/20">
             <div className="space-y-5">
               {/* Filler Words */}
               <div>
-                <div className="muted text-sm mb-1">Filler Words</div>
-                <div className="text-4xl font-bold text-foreground">{fillerWords}</div>
+                <div className="text-foreground font-semibold text-sm mb-2">Filler Words</div>
+                <div className="text-5xl font-bold text-foreground">{fillerWords}</div>
               </div>
 
               {/* Confidence */}
               <div>
-                <div className="muted text-sm mb-1">Confidence</div>
-                <div className="text-4xl font-bold text-foreground">
+                <div className="text-foreground font-semibold text-sm mb-2">Confidence</div>
+                <div className="text-5xl font-bold text-foreground">
                   {confidence !== null ? `${confidence}/10` : '--'}
                 </div>
               </div>
 
               {/* Professionalism */}
               <div>
-                <div className="muted text-sm mb-1">Professionalism</div>
-                <div className="text-4xl font-bold text-foreground">
+                <div className="text-foreground font-semibold text-sm mb-2">Professionalism</div>
+                <div className="text-5xl font-bold text-foreground">
                   {professionalism !== null ? `${professionalism}/10` : '--'}
                 </div>
               </div>
 
               {/* Real-time Tips */}
-              <div className="pt-4 border-t border-surface-2">
-                <div className="muted text-sm mb-2">Real-time Tips</div>
+              <div className="pt-4 border-t-2 border-accent/20">
+                <div className="text-foreground font-semibold text-sm mb-2">Real-time Tips</div>
                 <div className="space-y-2">
                   {roastMessages.length > 0 ? (
                     roastMessages.slice(0, 2).map((msg, i) => (
-                      <div key={i} className="muted text-sm">• {msg}</div>
+                      <div key={i} className="text-foreground/80 text-sm">• {msg}</div>
                     ))
                   ) : (
-                    <div className="muted text-sm italic">Analyzing your responses...</div>
+                    <div className="text-foreground/60 text-sm italic">Analyzing your responses...</div>
                   )}
                 </div>
               </div>
@@ -661,14 +666,14 @@ export default function InterviewPage() {
 
         {/* Role Selection - Only visible when interview hasn't started */}
         {!isInterviewStarted && (
-          <div className="mt-6 bg-surface/50 rounded-xl p-6 border border-surface-2">
-            <label className="block text-sm font-medium muted mb-3">
+          <div className="mt-6 bg-surface/50 rounded-xl p-6 border-2 border-accent/20">
+            <label className="block text-sm font-medium text-foreground mb-3">
               Select Interview Role
             </label>
             <select
               value={selectedRole}
               onChange={(e) => setSelectedRole(e.target.value)}
-              className="w-full px-4 py-3 bg-surface-2 border border-surface-2 rounded-lg text-foreground focus:ring-2 focus:ring-accent/40 focus:border-transparent mb-4"
+              className="w-full px-4 py-3 bg-surface-2 border-2 border-surface-2 rounded-lg text-foreground focus:ring-2 focus:ring-accent/40 focus:border-accent/50 mb-4"
             >
               {INTERVIEW_ROLES.map((role) => (
                 <option key={role.id} value={role.id}>
