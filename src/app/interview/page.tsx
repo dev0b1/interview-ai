@@ -1,5 +1,5 @@
 /**
- * Real-time Interview with AI Agent - Optimized UI
+ * Real-time Interview with AI Agent - Viral-Ready UI
  */
 
 "use client";
@@ -73,6 +73,7 @@ function useAgentMessages() {
   const [professionalism, setProfessionalism] = React.useState<number | null>(null);
   const [roastMessages, setRoastMessages] = React.useState<string[]>([]);
   const [fillerWords, setFillerWords] = React.useState<number>(0);
+  const [latestRoast, setLatestRoast] = React.useState<string | null>(null);
 
   const { message: msgAgent } = useDataChannel("agent-messages");
   const { message: msgInterview } = useDataChannel("interview_results");
@@ -115,7 +116,9 @@ function useAgentMessages() {
           case "agent.behavior_flag":
             setBehaviorFlags((prev) => [...prev, ...(data.issues as string[] || [])]);
             if ((data as Record<string, unknown>)['message']) {
-              setRoastMessages((r) => [String((data as Record<string, unknown>)['message']), ...r].slice(0, 5));
+              const msg = String((data as Record<string, unknown>)['message']);
+              setLatestRoast(msg);
+              setRoastMessages((r) => [msg, ...r].slice(0, 5));
             }
             break;
 
@@ -134,7 +137,9 @@ function useAgentMessages() {
               ai_feedback: (data.ai_feedback as string),
             });
             if ((data as Record<string, unknown>)['ai_feedback']) {
-              setRoastMessages((r) => [String((data as Record<string, unknown>)['ai_feedback']), ...r].slice(0, 5));
+              const msg = String((data as Record<string, unknown>)['ai_feedback']);
+              setLatestRoast(msg);
+              setRoastMessages((r) => [msg, ...r].slice(0, 5));
             }
             break;
         }
@@ -154,11 +159,15 @@ function useAgentMessages() {
         if (d) {
           const confRaw = Number(d['confidence_score'] ?? d['confidence'] ?? NaN);
           const profRaw = Number(d['professionalism_score'] ?? d['professionalism'] ?? NaN);
-          const fillerRaw = Number(d['filler_words'] ?? d['filler_word_count'] ?? NaN);
+          const fillerRaw = Number(d['filler_count_total'] ?? d['filler_words'] ?? d['filler_word_count'] ?? NaN);
           if (!Number.isNaN(confRaw)) setConfidence(Math.round(confRaw / 10));
           if (!Number.isNaN(profRaw)) setProfessionalism(Math.round(profRaw / 10));
           if (!Number.isNaN(fillerRaw)) setFillerWords(fillerRaw);
-          if (d['ai_feedback']) setRoastMessages((r) => [String(d['ai_feedback']), ...r].slice(0, 5));
+          if (d['ai_feedback']) {
+            const msg = String(d['ai_feedback']);
+            setLatestRoast(msg);
+            setRoastMessages((r) => [msg, ...r].slice(0, 5));
+          }
         }
       }
     } catch (err) {
@@ -166,7 +175,7 @@ function useAgentMessages() {
     }
   }, [msgAgent, msgInterview, msgLiveMetrics]);
 
-  return { greeting, summary, behaviorFlags, setGreeting, confidence, professionalism, roastMessages, fillerWords };
+  return { greeting, summary, behaviorFlags, setGreeting, confidence, professionalism, roastMessages, fillerWords, latestRoast };
 }
 
 function useInterviewTranscript(): Entry[] {
@@ -360,7 +369,7 @@ function InterviewRoomContent({
   isInterviewStarted: boolean;
   onEndInterview: () => void;
 }) {
-  const { greeting, summary, behaviorFlags, setGreeting, confidence, professionalism, roastMessages, fillerWords } = useAgentMessages();
+  const { greeting, summary, behaviorFlags, setGreeting, confidence, professionalism, roastMessages, fillerWords, latestRoast } = useAgentMessages();
   const entries = useInterviewTranscript();
   const room = useRoomContext();
   const remotes = useRemoteParticipants();
@@ -401,10 +410,10 @@ function InterviewRoomContent({
       {/* Header - Only show when interview is active and agent has joined */}
       {isInterviewStarted && isConnected && remotes.length > 0 && (
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-foreground">Analysis Mode: Active</h2>
+          <h2 className="text-lg font-semibold text-foreground">🔥 Roast Mode: Active</h2>
           <div className="flex items-center gap-2">
             <div className="w-2 h-2 bg-success rounded-full"></div>
-            <span className="muted text-sm">Connected</span>
+            <span className="muted text-sm">AI Agent Connected</span>
           </div>
         </div>
       )}
@@ -437,7 +446,7 @@ function InterviewRoomContent({
                 className="h-20 [&>div]:bg-accent"
               />
               <p className="text-center muted text-sm mt-3">
-                Detecting filler words, tone and clarity
+                Analyzing your filler words, tone and clarity
               </p>
             </div>
           )}
@@ -452,6 +461,19 @@ function InterviewRoomContent({
                   <div className="w-2 h-2 bg-accent rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
                 </div>
                 <p className="text-foreground text-sm font-medium">Waiting for AI agent to join...</p>
+              </div>
+            </div>
+          )}
+
+          {/* Latest Roast - Highlighted */}
+          {isInterviewStarted && latestRoast && (
+            <div className="mt-6 w-full max-w-md bg-accent/10 border-2 border-accent/40 rounded-lg p-4">
+              <div className="flex items-start gap-2">
+                <span className="text-2xl">💬</span>
+                <div className="flex-1">
+                  <div className="text-xs font-semibold text-accent mb-1">LATEST ROAST</div>
+                  <p className="text-foreground text-sm font-medium">&quot;{latestRoast}&quot;</p>
+                </div>
               </div>
             </div>
           )}
@@ -494,11 +516,11 @@ function InterviewRoomContent({
 
               {/* Real-time Tips */}
               <div className="pt-4 border-t-2 border-accent/20">
-                <div className="text-foreground font-semibold text-sm mb-2">Real-time Tips</div>
-                <div className="space-y-2">
+                <div className="text-foreground font-semibold text-sm mb-2">Recent Feedback</div>
+                <div className="space-y-2 max-h-32 overflow-y-auto">
                   {roastMessages.length > 0 ? (
-                    roastMessages.slice(0, 2).map((msg, i) => (
-                      <div key={i} className="text-foreground/80 text-sm">• {msg}</div>
+                    roastMessages.slice(0, 3).map((msg, i) => (
+                      <div key={i} className="text-foreground/80 text-xs">• {msg}</div>
                     ))
                   ) : (
                     <div className="text-foreground/60 text-sm italic">Analyzing your responses...</div>
@@ -635,6 +657,22 @@ export default function InterviewPage() {
         animate={{ opacity: 1, y: 0 }}
         className="max-w-7xl mx-auto"
       >
+        {/* Social Proof Banner - Only visible when interview hasn't started */}
+        {!isInterviewStarted && (
+          <div className="mb-4 bg-gradient-to-r from-accent/20 via-accent-2/20 to-accent/20 border-2 border-accent/30 rounded-xl p-4 text-center">
+            <div className="flex items-center justify-center gap-2 flex-wrap">
+              <span className="text-2xl">🔥</span>
+              <p className="text-foreground font-semibold text-sm md:text-base">
+                Join <span className="text-accent font-bold">1,247+</span> candidates getting roasted today
+              </p>
+              <span className="text-2xl">🔥</span>
+            </div>
+            <p className="text-foreground/70 text-xs mt-1">
+              ⚠️ This AI doesn&apos;t hold back. Expect brutal honesty about your &apos;ums&apos;, &apos;likes&apos;, and awkward pauses.
+            </p>
+          </div>
+        )}</motion.div>
+        
         <LiveKitRoom
           token={token ?? undefined}
           serverUrl={process.env.NEXT_PUBLIC_LIVEKIT_URL}
@@ -687,7 +725,7 @@ export default function InterviewPage() {
               disabled={connecting}
               className="w-full px-6 py-4 bg-accent text-foreground rounded-lg font-semibold text-lg hover:bg-accent-2 transform transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-xl"
             >
-              {connecting ? 'Connecting…' : '🚀 Start Interview'}
+              {connecting ? 'Connecting…' : '🚀 Start Roast Interview'}
             </button>
           </div>
         )}
@@ -718,9 +756,5 @@ export default function InterviewPage() {
                 </button>
               </div>
             </div>
-          </div>
-        )}
-      </motion.div>
-    </div>
-  );
-}
+            </div>)}
+            </div>)}
