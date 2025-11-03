@@ -369,11 +369,14 @@ function InterviewRoomContent({
   isInterviewStarted: boolean;
   onEndInterview: () => void;
 }) {
-  const {summary, confidence, professionalism, roastMessages, fillerWords, latestRoast } = useAgentMessages();
+  const { greeting, summary, behaviorFlags, setGreeting, confidence, professionalism, roastMessages, fillerWords, latestRoast } = useAgentMessages();
   const entries = useInterviewTranscript();
   const room = useRoomContext();
   const remotes = useRemoteParticipants();
   const { localParticipant } = useLocalParticipant();
+  
+  // Generate random user count for social proof (2000-5000)
+  const [userCount] = React.useState(() => Math.floor(Math.random() * (5000 - 2000 + 1)) + 2000);
   
   // Get AI agent's audio track (remote participant)
   const remoteTracks = useTracks([Track.Source.Microphone], {
@@ -419,18 +422,18 @@ function InterviewRoomContent({
       )}
 
       {/* Main Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Center: AI Avatar + Audio Viz - Card Background */}
-        <div className="lg:col-span-2 bg-surface/50 rounded-xl p-8 border-2 border-accent/30 flex flex-col items-center justify-center">
+        <div className="lg:col-span-2 bg-surface/50 rounded-xl p-6 border-2 border-accent/30 flex flex-col items-center justify-center">
           {/* AI Avatar */}
-          <div className="relative mb-6">
-            <div className="w-48 h-48 rounded-full bg-gradient-to-br from-accent via-accent-2 to-accent-2 flex items-center justify-center shadow-xl">
-              <div className="w-40 h-40 rounded-full bg-surface-2 flex items-center justify-center">
-                <div className="text-6xl">🤖</div>
+          <div className="relative mb-4">
+            <div className="w-40 h-40 rounded-full bg-gradient-to-br from-accent via-accent-2 to-accent-2 flex items-center justify-center shadow-xl">
+              <div className="w-32 h-32 rounded-full bg-surface-2 flex items-center justify-center">
+                <div className="text-5xl">🤖</div>
               </div>
             </div>
             {isInterviewStarted && isConnected && remotes.length > 0 && (
-              <div className="absolute -bottom-2 left-1/2 transform -translate-x-1/2 px-4 py-1 bg-success text-foreground text-sm rounded-full font-medium">
+              <div className="absolute -bottom-2 left-1/2 transform -translate-x-1/2 px-3 py-1 bg-success text-foreground text-xs rounded-full font-medium">
                 AI Agent Active
               </div>
             )}
@@ -443,9 +446,9 @@ function InterviewRoomContent({
                 state="speaking"
                 barCount={7}
                 trackRef={agentAudioTrack}
-                className="h-20 [&>div]:bg-accent"
+                className="h-16 [&>div]:bg-accent"
               />
-              <p className="text-center muted text-sm mt-3">
+              <p className="text-center muted text-xs mt-2">
                 Analyzing your filler words, tone and clarity
               </p>
             </div>
@@ -454,32 +457,32 @@ function InterviewRoomContent({
           {/* Fallback when agent hasn't joined yet */}
           {isInterviewStarted && !agentAudioTrack && (
             <div className="w-full max-w-md">
-              <div className="h-20 flex flex-col items-center justify-center gap-3">
+              <div className="h-16 flex flex-col items-center justify-center gap-2">
                 <div className="flex gap-1">
                   <div className="w-2 h-2 bg-accent rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
                   <div className="w-2 h-2 bg-accent rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
                   <div className="w-2 h-2 bg-accent rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
                 </div>
-                <p className="text-foreground text-sm font-medium">Waiting for AI agent to join...</p>
+                <p className="text-foreground text-sm font-medium">Waiting for AI agent...</p>
               </div>
             </div>
           )}
 
           {/* Latest Roast - Highlighted */}
           {isInterviewStarted && latestRoast && (
-            <div className="mt-6 w-full max-w-md bg-accent/10 border-2 border-accent/40 rounded-lg p-4">
+            <div className="mt-4 w-full max-w-md bg-accent/10 border-2 border-accent/40 rounded-lg p-3">
               <div className="flex items-start gap-2">
-                <span className="text-2xl">💬</span>
+                <span className="text-xl">💬</span>
                 <div className="flex-1">
                   <div className="text-xs font-semibold text-accent mb-1">LATEST ROAST</div>
-                  <p className="text-foreground text-sm font-medium">&quot;{latestRoast}&quot;</p>
+                  <p className="text-foreground text-xs font-medium">&quot;{latestRoast}&quot;</p>
                 </div>
               </div>
             </div>
           )}
 
           {/* Controls */}
-          <div className="mt-6">
+          <div className="mt-4">
             <InterviewControls
               isInterviewStarted={isInterviewStarted}
               onEndInterview={onEndInterview}
@@ -488,45 +491,68 @@ function InterviewRoomContent({
           </div>
         </div>
 
-        {/* Right: Metrics Panel - Only show when interview is active */}
-        {isInterviewStarted && (
-          <div className="bg-surface/50 rounded-xl p-6 border-2 border-accent/20">
-            <div className="space-y-5">
+        {/* Right: Metrics Panel OR Social Proof Banner */}
+        {isInterviewStarted ? (
+          <div className="bg-surface/50 rounded-xl p-4 border-2 border-accent/20">
+            <div className="space-y-4">
               {/* Filler Words */}
               <div>
-                <div className="text-foreground font-semibold text-sm mb-2">Filler Words</div>
-                <div className="text-5xl font-bold text-foreground">{fillerWords}</div>
+                <div className="text-foreground font-semibold text-xs mb-1">Filler Words</div>
+                <div className="text-4xl font-bold text-foreground">{fillerWords}</div>
               </div>
 
               {/* Confidence */}
               <div>
-                <div className="text-foreground font-semibold text-sm mb-2">Confidence</div>
-                <div className="text-5xl font-bold text-foreground">
+                <div className="text-foreground font-semibold text-xs mb-1">Confidence</div>
+                <div className="text-4xl font-bold text-foreground">
                   {confidence !== null ? `${confidence}/10` : '--'}
                 </div>
               </div>
 
               {/* Professionalism */}
               <div>
-                <div className="text-foreground font-semibold text-sm mb-2">Professionalism</div>
-                <div className="text-5xl font-bold text-foreground">
+                <div className="text-foreground font-semibold text-xs mb-1">Professionalism</div>
+                <div className="text-4xl font-bold text-foreground">
                   {professionalism !== null ? `${professionalism}/10` : '--'}
                 </div>
               </div>
 
               {/* Real-time Tips */}
-              <div className="pt-4 border-t-2 border-accent/20">
-                <div className="text-foreground font-semibold text-sm mb-2">Recent Feedback</div>
-                <div className="space-y-2 max-h-32 overflow-y-auto">
+              <div className="pt-3 border-t-2 border-accent/20">
+                <div className="text-foreground font-semibold text-xs mb-2">Recent Feedback</div>
+                <div className="space-y-1 max-h-24 overflow-y-auto">
                   {roastMessages.length > 0 ? (
                     roastMessages.slice(0, 3).map((msg, i) => (
-                      <div key={i} className="text-foreground/80 text-xs">• {msg}</div>
+                      <div key={i} className="text-foreground/80 text-xs leading-tight">• {msg}</div>
                     ))
                   ) : (
-                    <div className="text-foreground/60 text-sm italic">Analyzing your responses...</div>
+                    <div className="text-foreground/60 text-xs italic">Analyzing responses...</div>
                   )}
                 </div>
               </div>
+            </div>
+          </div>
+        ) : (
+          <div className="bg-gradient-to-br from-accent/20 via-accent-2/20 to-accent/20 border-2 border-accent/30 rounded-xl p-6 flex flex-col items-center justify-center">
+            <div className="text-center space-y-3">
+              <div className="flex items-center justify-center gap-2">
+                <span className="text-3xl">🔥</span>
+                <div>
+                  <p className="text-foreground font-bold text-2xl">
+                    {userCount.toLocaleString()}+
+                  </p>
+                  <p className="text-foreground/80 text-xs font-medium">
+                    Getting Roasted Today
+                  </p>
+                </div>
+                <span className="text-3xl">🔥</span>
+              </div>
+              <div className="h-px bg-accent/30 w-full"></div>
+              <p className="text-foreground/70 text-xs leading-relaxed">
+                ⚠️ This AI doesn&apos;t hold back.<br/>
+                Expect brutal honesty about<br/>
+                your &apos;ums&apos;, &apos;likes&apos;, and pauses.
+              </p>
             </div>
           </div>
         )}
@@ -657,22 +683,6 @@ export default function InterviewPage() {
         animate={{ opacity: 1, y: 0 }}
         className="max-w-7xl mx-auto"
       >
-        {/* Social Proof Banner - Only visible when interview hasn't started */}
-        {!isInterviewStarted && (
-          <div className="mb-4 bg-gradient-to-r from-accent/20 via-accent-2/20 to-accent/20 border-2 border-accent/30 rounded-xl p-4 text-center">
-            <div className="flex items-center justify-center gap-2 flex-wrap">
-              <span className="text-2xl">🔥</span>
-              <p className="text-foreground font-semibold text-sm md:text-base">
-                Join <span className="text-accent font-bold">1,247+</span> candidates getting roasted today
-              </p>
-              <span className="text-2xl">🔥</span>
-            </div>
-            <p className="text-foreground/70 text-xs mt-1">
-              ⚠️ This AI doesn&apos;t hold back. Expect brutal honesty about your &apos;ums&apos;, &apos;likes&apos;, and awkward pauses.
-            </p>
-          </div>
-        )}</motion.div>
-        
         <LiveKitRoom
           token={token ?? undefined}
           serverUrl={process.env.NEXT_PUBLIC_LIVEKIT_URL}
@@ -702,32 +712,35 @@ export default function InterviewPage() {
           />
         </LiveKitRoom>
 
-        {/* Role Selection - Only visible when interview hasn't started */}
+        {/* Bottom Section: Social Proof + Role Selection */}
         {!isInterviewStarted && (
-          <div className="mt-6 bg-surface/50 rounded-xl p-6 border-2 border-accent/20">
-            <label className="block text-sm font-medium text-foreground mb-3">
-              Select Interview Role
-            </label>
-            <select
-              value={selectedRole}
-              onChange={(e) => setSelectedRole(e.target.value)}
-              className="w-full px-4 py-3 bg-surface-2 border-2 border-surface-2 rounded-lg text-foreground focus:ring-2 focus:ring-accent/40 focus:border-accent/50 mb-4"
-            >
-              {INTERVIEW_ROLES.map((role) => (
-                <option key={role.id} value={role.id}>
-                  {role.label}
-                </option>
-              ))}
-            </select>
+          <>
+            {/* Role Selection - Full width below */}
+            <div className="mt-4 bg-surface/50 rounded-xl p-6 border-2 border-accent/20">
+              <label className="block text-sm font-medium text-foreground mb-3">
+                Select Interview Role
+              </label>
+              <select
+                value={selectedRole}
+                onChange={(e) => setSelectedRole(e.target.value)}
+                className="w-full px-4 py-3 bg-surface-2 border-2 border-surface-2 rounded-lg text-foreground focus:ring-2 focus:ring-accent/40 focus:border-accent/50 mb-4"
+              >
+                {INTERVIEW_ROLES.map((role) => (
+                  <option key={role.id} value={role.id}>
+                    {role.label}
+                  </option>
+                ))}
+              </select>
 
-            <button
-              onClick={handleStartInterview}
-              disabled={connecting}
-              className="w-full px-6 py-4 bg-accent text-foreground rounded-lg font-semibold text-lg hover:bg-accent-2 transform transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-xl"
-            >
-              {connecting ? 'Connecting…' : '🚀 Start Roast Interview'}
-            </button>
-          </div>
+              <button
+                onClick={handleStartInterview}
+                disabled={connecting}
+                className="w-full px-6 py-4 bg-accent text-foreground rounded-lg font-semibold text-lg hover:bg-accent-2 transform transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-xl"
+              >
+                {connecting ? 'Connecting…' : '🚀 Start Roast Interview'}
+              </button>
+            </div>
+          </>
         )}
 
         {showEndConfirm && (
@@ -756,5 +769,9 @@ export default function InterviewPage() {
                 </button>
               </div>
             </div>
-            </div>)}
-            </div>)}
+          </div>
+        )}
+      </motion.div>
+    </div>
+  );
+}
