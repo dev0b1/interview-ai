@@ -369,7 +369,7 @@ function InterviewRoomContent({
   isInterviewStarted: boolean;
   onEndInterview: () => void;
 }) {
-  const { greeting, summary, behaviorFlags, setGreeting, confidence, professionalism, roastMessages, fillerWords, latestRoast } = useAgentMessages();
+  const {summary, confidence, professionalism, roastMessages, fillerWords, latestRoast } = useAgentMessages();
   const entries = useInterviewTranscript();
   const room = useRoomContext();
   const remotes = useRemoteParticipants();
