@@ -6,13 +6,14 @@ interface Props {
   priceId: string;
   onSuccess?: () => void;
   children?: React.ReactNode;
+  userId?: string | null;
 }
 
 declare global {
   interface Window { Paddle?: any; }
 }
 
-export default function PaddleCheckoutButton({ priceId, onSuccess, children }: Props) {
+export default function PaddleCheckoutButton({ priceId, onSuccess, children, userId }: Props) {
   const [paddle, setPaddle] = React.useState<any | null>(null);
   const [loading, setLoading] = React.useState(false);
   const [showFallback, setShowFallback] = React.useState(false);
@@ -62,27 +63,39 @@ export default function PaddleCheckoutButton({ priceId, onSuccess, children }: P
 
   const handleClick = async () => {
     setLoading(true);
+    // Open a blank popup synchronously so we can navigate to checkout URL
+    // later without being blocked by popup blockers. If window.open fails
+    // (returns null) we'll fall back to showing the inline modal.
+    let popup: Window | null = null;
     try {
-      // create transaction on server
-      const res = await fetch('/api/payments/create', {
+      popup = window.open('', '_blank');
+    } catch (e) {
+      popup = null;
+    }
+
+    try {
+      // create transaction on server (Paddle Billing)
+      const res = await fetch('/api/paddle/checkout', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ product_id: priceId }),
+        body: JSON.stringify({ priceId: priceId, userId: userId ?? null }),
       });
       const j = await res.json();
       const transactionId = j.transactionId ?? j.transaction?.id;
       const checkoutUrl = j.checkoutUrl ?? j.checkout_url;
 
-      // If Paddle overlay is available, try opening inline overlay
+      // If Paddle overlay is available, try opening inline overlay.
       if (paddle && transactionId && typeof paddle.Checkout?.open === 'function') {
         try {
+          // close the temporary popup — overlay will be used instead
+          try { popup?.close(); } catch {}
+
           paddle.Checkout.open({
             transactionId,
             onComplete: () => {
               // show an inline success toast instead of navigating immediately
               onSuccess?.();
               setShowSuccessToast(true);
-              // auto-hide after a short period
               setTimeout(() => setShowSuccessToast(false), 3500);
             },
             onClose: () => {
@@ -92,12 +105,25 @@ export default function PaddleCheckoutButton({ priceId, onSuccess, children }: P
           return;
         } catch (err) {
           console.warn('Paddle overlay open failed', err);
-          // fallthrough to fallback modal
+          // fallthrough to fallback behavior
         }
       }
 
-      // If we don't have overlay or it failed, use graceful fallback modal
+      // If overlay isn't available, navigate the popup (if opened) to the checkout URL.
       if (checkoutUrl) {
+        if (popup) {
+          try {
+            popup.location.href = checkoutUrl;
+            return;
+          } catch (err) {
+            // Setting location may fail; fall back to modal below
+            console.warn('Failed to navigate popup to checkout URL', err);
+            try { popup.close(); } catch {}
+            popup = null;
+          }
+        }
+
+        // If popup was blocked, show inline fallback modal with link
         setFallbackUrl(checkoutUrl);
         setShowFallback(true);
         return;
@@ -109,6 +135,10 @@ export default function PaddleCheckoutButton({ priceId, onSuccess, children }: P
       alert('Checkout failed');
     } finally {
       setLoading(false);
+      // Ensure we don't leave an empty popup open
+      try {
+        if (popup && !popup.closed) popup.close();
+      } catch {}
     }
   };
 
