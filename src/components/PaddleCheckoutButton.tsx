@@ -63,6 +63,7 @@ export default function PaddleCheckoutButton({ priceId, onSuccess, children, use
 
   const handleClick = async () => {
     setLoading(true);
+    console.log('[PaddleCheckout] Starting checkout flow', { priceId, userId });
     // Open a blank popup synchronously so we can navigate to checkout URL
     // later without being blocked by popup blockers. If window.open fails
     // (returns null) we'll fall back to showing the inline modal.

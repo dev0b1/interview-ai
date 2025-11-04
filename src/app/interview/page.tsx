@@ -52,13 +52,30 @@ interface InterviewSummary {
 // ============================================================================
 
 const INTERVIEW_ROLES = [
-  { id: "frontend", label: "Frontend Developer" },
   { id: "backend", label: "Backend Developer" },
-  { id: "fullstack", label: "Full Stack Developer" },
-  { id: "data", label: "Data Scientist" },
+  { id: "business_analyst", label: "Business Analyst" },
+  { id: "cloud_architect", label: "Cloud Architect" },
+  { id: "data_engineer", label: "Data Engineer" },
+  { id: "data_scientist", label: "Data Scientist" },
+  { id: "dba", label: "Database Administrator (DBA)" },
   { id: "devops", label: "DevOps Engineer" },
-  { id: "product", label: "Product Manager" },
+  { id: "embedded", label: "Embedded Systems Engineer" },
+  { id: "frontend", label: "Frontend Developer" },
+  { id: "fullstack", label: "Full Stack Developer" },
   { id: "general", label: "General Interview" },
+  { id: "infrastructure", label: "Infrastructure Engineer" },
+  { id: "ml_engineer", label: "Machine Learning Engineer" },
+  { id: "mobile", label: "Mobile Engineer (iOS / Android)" },
+  { id: "performance", label: "Performance / Reliability Engineer" },
+  { id: "product", label: "Product Manager" },
+  { id: "qa", label: "QA / Test Engineer" },
+  { id: "sales_engineer", label: "Sales Engineer" },
+  { id: "security", label: "Security Engineer" },
+  { id: "sre", label: "Site Reliability Engineer (SRE)" },
+  { id: "support", label: "Support / Customer Engineer" },
+  { id: "tpm", label: "Technical Program Manager" },
+  { id: "tech_writer", label: "Technical Writer" },
+  { id: "ux", label: "UX / Product Designer" },
 ];
 
 // ============================================================================

@@ -48,6 +48,12 @@ async function fetchWithTimeout(url: string, opts: RequestInit = {}, timeout = D
 
 async function requestWithRetries(url: string, opts: RequestInit = {}, retries = DEFAULT_RETRIES) {
   let attempt = 0;
+  console.log('[PaddleBilling] Making API request', {
+    url,
+    method: opts.method,
+    attempt: attempt + 1,
+    retries
+  });
   let lastErr: any = null;
   while (attempt <= retries) {
     try {
@@ -98,23 +104,38 @@ export async function createTransaction(payload: CreatePayload): Promise<CreateR
     },
     body: JSON.stringify(body),
   };
-
   try {
+    console.log('[PaddleBilling] POST to Paddle', { url, body });
     const res = await requestWithRetries(url, opts);
     if (!res.ok) {
-      const errBody = await res.json().catch(() => ({}));
+      // read text first so we always capture raw response
+      const text = await res.text().catch(() => '');
+      let errBody: any = {};
+      try {
+        errBody = text ? JSON.parse(text) : {};
+      } catch (e) {
+        errBody = { raw_text: text };
+      }
       const msg = errBody?.error?.detail || errBody?.error?.message || `Paddle API error: ${res.status}`;
       const e: any = new Error(msg);
       (e as any).status = res.status;
       (e as any).raw = errBody;
+      console.error('[PaddleBilling] Paddle API returned non-OK', { status: res.status, errBody });
       throw e;
     }
-    const data = await res.json().catch(() => ({}));
+    const text = await res.text().catch(() => '');
+    let data: any = {};
+    try {
+      data = text ? JSON.parse(text) : {};
+    } catch (e) {
+      data = { raw_text: text };
+    }
     const d = data?.data ?? data;
     const checkoutUrl = d?.checkout?.url ?? d?.checkout_url ?? null;
+    console.log('[PaddleBilling] Paddle response', { d });
     return { id: d?.id, transaction: d, checkoutUrl, checkout_url: checkoutUrl, raw: data };
   } catch (err: any) {
-    console.error('Paddle API error:', err?.message ?? err);
+    console.error('Paddle API error:', err?.message ?? err, { raw: err?.raw });
     throw err;
   }
 }
