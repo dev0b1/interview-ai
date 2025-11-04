@@ -81,6 +81,14 @@ export default function PaddleCheckoutButton({ priceId, onSuccess, children, use
         body: JSON.stringify({ priceId: priceId, userId: userId ?? null }),
       });
       const j = await res.json();
+      if (!res.ok) {
+        // Surface server error to the user for easier debugging
+        const msg = j?.error || j?.message || JSON.stringify(j);
+        console.error('Create checkout returned error:', msg);
+        alert(`Checkout failed: ${msg}`);
+        return;
+      }
+
       const transactionId = j.transactionId ?? j.transaction?.id;
       const checkoutUrl = j.checkoutUrl ?? j.checkout_url;
 
