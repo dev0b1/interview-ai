@@ -63,6 +63,12 @@ export default function PaddleCheckoutButton({ priceId, onSuccess, children, use
 
   const handleClick = async () => {
     setLoading(true);
+    if (!priceId || priceId.trim() === '') {
+      console.error('[PaddleCheckout] Missing priceId, aborting checkout', { priceId });
+      alert('Payment configuration error: price ID is missing. Please contact support.');
+      setLoading(false);
+      return;
+    }
     console.log('[PaddleCheckout] Starting checkout flow', { priceId, userId });
     // Open a blank popup synchronously so we can navigate to checkout URL
     // later without being blocked by popup blockers. If window.open fails

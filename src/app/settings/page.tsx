@@ -120,7 +120,7 @@ export default function SettingsPage() {
 
                 {/* Upgrade to Pro button */}
                 {/* Use Paddle.js v2 overlay when available via PaddleCheckoutButton */}
-                <PaddleCheckoutButton priceId={process.env.NEXT_PUBLIC_PRO_PRODUCT_ID || ''} userId={userId ?? null}>
+                <PaddleCheckoutButton priceId={process.env.NEXT_PUBLIC_PRO_PRODUCT_ID || process.env.NEXT_PUBLIC_PADDLE_PRODUCT_ID || ''} userId={userId ?? null}>
                   {isPro === true ? 'Pro — Active' : 'Upgrade to Pro'}
                 </PaddleCheckoutButton>
               </div>
