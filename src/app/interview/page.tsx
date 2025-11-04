@@ -591,6 +591,14 @@ export default function InterviewPage() {
   }, [initializing, session, router]);
 
   const [selectedRole, setSelectedRole] = React.useState("frontend");
+  const [limits, setLimits] = React.useState<null | {
+    anonymous?: boolean;
+    isSubscribed?: boolean;
+    remaining?: number;
+    limit?: number;
+    usedThisMonth?: number;
+    usedTotal?: number;
+  }>(null);
   const [token, setToken] = React.useState<string | null>(null);
   const [interviewId, setInterviewId] = React.useState<string | null>(null);
   const [connecting, setConnecting] = React.useState(false);
@@ -602,6 +610,26 @@ export default function InterviewPage() {
            session?.user?.email || 
            "Candidate";
   }, [session]);
+
+  // Fetch interview limits for the current user so we can show remaining count
+  React.useEffect(() => {
+    let mounted = true;
+    const fetchLimits = async () => {
+      try {
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        if (session?.access_token) headers['Authorization'] = `Bearer ${session.access_token}`;
+        const res = await fetch('/api/interviews/limits', { headers });
+        const j = await res.json();
+        if (!mounted) return;
+        setLimits(j);
+      } catch (err) {
+        console.warn('Failed to fetch interview limits', err);
+      }
+    };
+
+    fetchLimits();
+    return () => { mounted = false; };
+  }, [session?.access_token, initializing]);
 
   const connectToRoom = React.useCallback(async () => {
     if (!session?.access_token) {
@@ -731,6 +759,29 @@ export default function InterviewPage() {
                   </option>
                 ))}
               </select>
+
+              {/* Interview limits indicator */}
+              {limits && (
+                <div className="mb-3 text-sm">
+                  {limits.anonymous ? (
+                    <div className="text-foreground/70">Sign in to track interview limits.</div>
+                  ) : limits.isSubscribed ? (
+                    <div className="flex items-center justify-between">
+                      <div className="text-foreground/90">Subscribed — {limits.usedThisMonth ?? 0}/{limits.limit} this month</div>
+                      <div className={`px-2 py-1 rounded text-xs font-medium ${((limits.remaining ?? 0) <= 0) ? 'bg-danger text-foreground' : 'bg-success/10 text-success'}`}>
+                        {limits.remaining ?? 0} remaining
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-between">
+                      <div className="text-foreground/90">Free — {limits.usedTotal ?? 0}/{limits.limit} used</div>
+                      <div className={`px-2 py-1 rounded text-xs font-medium ${((limits.remaining ?? 0) <= 0) ? 'bg-danger text-foreground' : 'bg-accent/10 text-accent'}`}>
+                        {limits.remaining ?? 0} remaining
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
 
               <button
                 onClick={handleStartInterview}

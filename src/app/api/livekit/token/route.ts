@@ -42,12 +42,63 @@ export async function GET(request: Request) {
 
     const jwt = await token.toJwt();
 
+    // Before creating an interview row, enforce per-user limits.
+    // Defaults (can be overridden via env):
+    //  - MAX_INTERVIEWS_FREE (default 3) -- total allowed for unsubscribed users
+    //  - MAX_INTERVIEWS_SUBSCRIBED_MONTHLY (default 20) -- monthly allowed for subscribed users
+    const { supabase } = await import('@/lib/supabaseClient');
+
+    const MAX_FREE = Number(process.env.MAX_INTERVIEWS_FREE ?? '3');
+    const MAX_SUB_MONTHLY = Number(process.env.MAX_INTERVIEWS_SUBSCRIBED_MONTHLY ?? '20');
+
+    // If we have an authenticated owner, check their subscription and interview counts.
+    if (ownerId) {
+      try {
+        // Check for active subscription (provider-agnostic; prefer 'active' status)
+        const { data: subs } = await supabase
+          .from('subscriptions')
+          .select('status')
+          .eq('user_id', ownerId)
+          .limit(1);
+
+        const isSubscribed = Array.isArray(subs) && subs.length > 0 && subs[0].status === 'active';
+
+        if (isSubscribed) {
+          // Count interviews created this month
+          const now = new Date();
+          const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+          const { count } = await supabase
+            .from('interviews')
+            .select('id', { count: 'exact' })
+            .eq('owner', ownerId)
+            .gte('created_at', startOfMonth);
+
+          if ((count ?? 0) >= MAX_SUB_MONTHLY) {
+            console.warn(`Interview limit reached for subscribed user ${ownerId}: ${count}/${MAX_SUB_MONTHLY}`);
+            return NextResponse.json({ error: 'monthly_limit_exceeded', message: `Subscribed users may create up to ${MAX_SUB_MONTHLY} interviews per month.` }, { status: 403 });
+          }
+        } else {
+          // Unsubscribed users: enforce a total interview limit
+          const { count } = await supabase
+            .from('interviews')
+            .select('id', { count: 'exact' })
+            .eq('owner', ownerId);
+
+          if ((count ?? 0) >= MAX_FREE) {
+            console.warn(`Interview limit reached for free user ${ownerId}: ${count}/${MAX_FREE}`);
+            return NextResponse.json({ error: 'free_limit_exceeded', message: `Free users may create up to ${MAX_FREE} interviews. Upgrade to increase this limit.` }, { status: 403 });
+          }
+        }
+      } catch (e) {
+        console.warn('Failed to check interview limits; allowing interview by default', e);
+      }
+    }
+
     // create an interview record on the server and return its id to the client
     const interviewId = `iv_${Math.random().toString(36).slice(2, 10)}`;
 
-    // Prefer using Supabase service role (server-side) if available. This avoids
-    // direct PG connections which may fail in some dev/network environments.
-    const { supabase } = await import('@/lib/supabaseClient');
+  // Prefer using Supabase service role (server-side) if available. This avoids
+  // direct PG connections which may fail in some dev/network environments.
     const hasServiceRole = !!process.env.SUPABASE_SERVICE_ROLE_KEY;
 
     if (hasServiceRole && supabase) {
