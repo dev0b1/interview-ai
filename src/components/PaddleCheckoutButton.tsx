@@ -75,7 +75,7 @@ export default function PaddleCheckoutButton({ priceId, onSuccess, children, use
 
     try {
       // create transaction on server (Paddle Billing)
-      const res = await fetch('/api/paddle/checkout', {
+      const res = await fetch('/api/paddle-billing/checkout', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ priceId: priceId, userId: userId ?? null }),

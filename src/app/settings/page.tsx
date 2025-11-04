@@ -105,7 +105,7 @@ export default function SettingsPage() {
                           if (user?.id) uid = user.id;
                         } catch {}
                       }
-                      const res = await fetch('/api/paddle/checkout', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ priceId: productId, userId: uid }) });
+                      const res = await fetch('/api/paddle-billing/checkout', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ priceId: productId, userId: uid }) });
                       const j = await res.json();
                       const url = j.checkoutUrl ?? j.checkout_url;
                       if (url) window.location.href = url; else alert('Failed to create checkout');
