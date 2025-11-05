@@ -60,15 +60,16 @@ export function Checkout({ user }: CheckoutProps) {
     }
 
     // Pass the priceId as a search parameter to the checkout page.
-  const priceId = searchParams.get('priceId');
+    const priceId = searchParams.get('priceId');
+    const normalizedPriceId = priceId == null ? '' : String(priceId).trim();
 
-    if (priceId) {
+    if (normalizedPriceId && normalizedPriceId !== 'undefined') {
       (paddle as any)?.Checkout?.open?.({
         settings: {
           // Prevent user from changing their email
           allowLogout: false,
         },
-        items: [{ priceId, quantity: 1 }],
+        items: [{ priceId: normalizedPriceId, quantity: 1 }],
         customer: {
           // You can pass the customer ID if you have it
           // This is the Paddle customer ID, not the user ID from your database

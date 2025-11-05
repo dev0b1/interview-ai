@@ -42,7 +42,8 @@ export default function PaddleCheckoutButton({ priceId, onSuccess, children, use
   const handleClick = async () => {
     setLoading(true);
     const effectivePriceId = priceId || process.env.NEXT_PUBLIC_PRO_PRODUCT_ID || process.env.NEXT_PUBLIC_PADDLE_PRODUCT_ID;
-    if (!effectivePriceId || String(effectivePriceId).trim() === '') {
+    const normalizedPriceId = effectivePriceId == null ? '' : String(effectivePriceId).trim();
+    if (!normalizedPriceId || normalizedPriceId === 'undefined') {
       console.error('[PaddleCheckout] Missing priceId, aborting checkout', { priceId, envFallbacks: { NEXT_PUBLIC_PRO_PRODUCT_ID: process.env.NEXT_PUBLIC_PRO_PRODUCT_ID, NEXT_PUBLIC_PADDLE_PRODUCT_ID: process.env.NEXT_PUBLIC_PADDLE_PRODUCT_ID } });
       alert('Payment configuration error: price ID is missing. Please contact support.');
       setLoading(false);
@@ -58,9 +59,9 @@ export default function PaddleCheckoutButton({ priceId, onSuccess, children, use
         return;
       }
 
-      console.log('[PaddleCheckout] Opening overlay with priceId', { effectivePriceId, userId });
+      console.log('[PaddleCheckout] Opening overlay with priceId', { effectivePriceId: normalizedPriceId, userId });
       p.Checkout.open({
-        items: [{ priceId: effectivePriceId, quantity: 1 }],
+        items: [{ priceId: normalizedPriceId, quantity: 1 }],
         settings: { displayMode: 'overlay', locale: 'en' },
         customer: userId ? { id: userId } : undefined,
         customData: { userId: userId } as any,
