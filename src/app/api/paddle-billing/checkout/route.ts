@@ -25,12 +25,22 @@ export async function POST(req: NextRequest) {
     }
 
     const base = process.env.NEXT_PUBLIC_BASE_URL || '';
+    // Validate base URL before using it in checkout settings
+    if (!base) {
+      console.warn('[PaddleBilling] NEXT_PUBLIC_BASE_URL not set, omitting checkout.url');
+    } else {
+      console.log('[PaddleBilling] Using return URL:', `${base.replace(/\/$/, '')}/settings?payment=success`);
+    }
+
     const payload: Record<string, unknown> = {
       items: [{ priceId, quantity: 1 }],
       customerEmail: customerEmail || undefined,
       customerId: customerId || undefined,
       customData: customData || undefined,
-      checkoutSettings: { successUrl: `${base.replace(/\/$/, '')}/settings?payment=success` },
+      // Only include checkout settings if we have a valid base URL
+      ...(base ? {
+        checkoutSettings: { successUrl: `${base.replace(/\/$/, '')}/settings?payment=success` }
+      } : {}),
     };
 
   const tx = await createTransaction(payload);
