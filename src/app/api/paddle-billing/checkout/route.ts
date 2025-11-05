@@ -26,9 +26,16 @@ export async function POST(req: NextRequest) {
     // Include success URL for redirect-based checkout flows
     const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || `https://${req.headers.get('host')}`;
     const successUrl = `${baseUrl}/settings?payment=success`;
-    
+
+    // Accept priceId from request, or fall back to public env vars (these must be set in your deployment)
+    const effectivePriceId = (priceId as string) || process.env.NEXT_PUBLIC_PRO_PRODUCT_ID || process.env.NEXT_PUBLIC_PADDLE_PRODUCT_ID;
+    if (!effectivePriceId || String(effectivePriceId).trim() === '') {
+      console.error('[PaddleBilling] Missing priceId - cannot create checkout', { priceId, envFallbacks: { NEXT_PUBLIC_PRO_PRODUCT_ID: process.env.NEXT_PUBLIC_PRO_PRODUCT_ID, NEXT_PUBLIC_PADDLE_PRODUCT_ID: process.env.NEXT_PUBLIC_PADDLE_PRODUCT_ID } });
+      return NextResponse.json({ error: 'priceId not provided. Ensure NEXT_PUBLIC_PRO_PRODUCT_ID or NEXT_PUBLIC_PADDLE_PRODUCT_ID is configured.' }, { status: 400 });
+    }
+
     const payload: Record<string, unknown> = {
-      items: [{ priceId, quantity: 1 }],
+      items: [{ priceId: effectivePriceId, quantity: 1 }],
       customerEmail: customerEmail || undefined,
       customerId: customerId || undefined,
       customData: customData || undefined,
