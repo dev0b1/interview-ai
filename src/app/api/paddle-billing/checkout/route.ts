@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createTransaction } from '@/lib/paddleBilling';
 
 export async function POST(req: NextRequest) {
+  // Track these at function scope so error handlers can access them
+  let baseUrl: string | undefined;
+  let successUrl: string | undefined;
+  
   try {
     const body = await req.json();
     const priceId = body?.priceId;
@@ -27,35 +31,34 @@ export async function POST(req: NextRequest) {
     }
 
     // Get base URL from environment or request headers
-    let base = process.env.NEXT_PUBLIC_BASE_URL;
-    if (!base) {
+    baseUrl = process.env.NEXT_PUBLIC_BASE_URL;
+    if (!baseUrl) {
       const host = req.headers.get('host');
       const protocol = req.headers.get('x-forwarded-proto') || 'https';
       if (host) {
-        base = `${protocol}://${host}`;
+        baseUrl = `${protocol}://${host}`;
       }
     }
     
     console.log('[PaddleBilling] URL Details:', {
-      base,
+      baseUrl,
       host: req.headers.get('host'),
       proto: req.headers.get('x-forwarded-proto'),
       referer: req.headers.get('referer')
     });
 
     // Build the return URL carefully
-    let successUrl: string | undefined;
-    if (base) {
+    if (baseUrl) {
       try {
-        const baseUrl = new URL(base);
+        const url = new URL(baseUrl);
         // Ensure we're using https for Paddle
-        baseUrl.protocol = 'https:';
+        url.protocol = 'https:';
         // Clean any trailing slashes and add our path
-        const cleanBase = baseUrl.toString().replace(/\/$/, '');
+        const cleanBase = url.toString().replace(/\/$/, '');
         successUrl = `${cleanBase}/settings?payment=success`;
         console.log('[PaddleBilling] Using return URL:', successUrl);
       } catch (e) {
-        console.warn('[PaddleBilling] Invalid base URL:', base, e);
+        console.warn('[PaddleBilling] Invalid base URL:', baseUrl, e);
       }
     } else {
       console.warn('[PaddleBilling] No base URL available, omitting checkout.url');
@@ -85,8 +88,10 @@ export async function POST(req: NextRequest) {
       if (msg.includes('checkout.url') && msg.includes('domain')) {
         let domain = 'unknown';
         try {
-          if (base) {
-            domain = new URL(base).hostname;
+          if (successUrl) {
+            domain = new URL(successUrl).hostname;
+          } else if (baseUrl) {
+            domain = new URL(baseUrl).hostname;
           }
         } catch {}
         
@@ -94,7 +99,8 @@ export async function POST(req: NextRequest) {
           message: msg,
           raw,
           domain,
-          base,
+          baseUrl,
+          successUrl,
           isSandbox: process.env.PADDLE_ENVIRONMENT === 'sandbox'
         });
         
