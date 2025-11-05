@@ -121,14 +121,22 @@ export default function PaddleCheckoutButton({ priceId, onSuccess, children, use
         return;
       }
 
-      // If Paddle overlay is available, try opening inline overlay.
-      if (paddle && transactionId && typeof paddle.Checkout?.open === 'function') {
+      // Always use Paddle JS SDK for checkout when available
+      if (paddle?.Checkout?.open && typeof paddle.Checkout.open === 'function') {
         try {
           // close the temporary popup — overlay will be used instead
           try { popup?.close(); } catch {}
 
+          console.log('[PaddleCheckout] Opening Paddle overlay with transaction', { transactionId });
+          
           paddle.Checkout.open({
-            transactionId,
+            transactionId: transactionId,
+            items: [{ priceId: priceId, quantity: 1 }],
+            settings: {
+              displayMode: 'overlay',
+              theme: document.documentElement.classList.contains('dark') ? 'dark' : 'light',
+              locale: 'en',
+            },
             onComplete: () => {
               // show an inline success toast instead of navigating immediately
               onSuccess?.();
