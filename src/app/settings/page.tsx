@@ -4,7 +4,6 @@ import React from "react";
 import { useAuth } from "../../lib/useAuth";
 import type { SupabaseClient } from '@supabase/supabase-js';
 import dynamic from 'next/dynamic';
-
 const PaddleCheckoutButton = dynamic(() => import('@/components/PaddleCheckoutButton'), { ssr: false });
 
 export default function SettingsPage() {
@@ -120,7 +119,7 @@ export default function SettingsPage() {
 
                 {/* Upgrade to Pro button */}
                 {/* Use Paddle.js v2 overlay when available via PaddleCheckoutButton */}
-                <PaddleCheckoutButton priceId={process.env.NEXT_PUBLIC_PRO_PRODUCT_ID || process.env.NEXT_PUBLIC_PADDLE_PRODUCT_ID || ''} userId={userId ?? null}>
+                <PaddleCheckoutButton userId={userId ?? null}>
                   {isPro === true ? 'Pro — Active' : 'Upgrade to Pro'}
                 </PaddleCheckoutButton>
               </div>

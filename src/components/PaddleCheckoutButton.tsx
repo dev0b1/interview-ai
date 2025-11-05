@@ -3,7 +3,7 @@
 import React from 'react';
 
 interface Props {
-  priceId: string;
+  priceId?: string;
   onSuccess?: () => void;
   children?: React.ReactNode;
   userId?: string | null;
@@ -14,183 +14,75 @@ declare global {
 }
 
 export default function PaddleCheckoutButton({ priceId, onSuccess, children, userId }: Props) {
-  const [paddle, setPaddle] = React.useState<any | null>(null);
   const [loading, setLoading] = React.useState(false);
   const [showFallback, setShowFallback] = React.useState(false);
   const [fallbackUrl, setFallbackUrl] = React.useState<string | null>(null);
   const [showSuccessToast, setShowSuccessToast] = React.useState(false);
 
-  React.useEffect(() => {
-    let mounted = true;
-    // If Paddle is already loaded, use it; otherwise inject the CDN script.
-    const init = () => {
-      try {
-        const p = (window as any).Paddle;
-        if (p && mounted) setPaddle(p);
-      } catch (err) {
-        console.warn('Paddle init error', err);
-      }
-    };
-
-    if ((window as any).Paddle) {
-      init();
-      return () => { mounted = false; };
-    }
-
-    const script = document.createElement('script');
-    script.src = process.env.NEXT_PUBLIC_PADDLE_JS_URL || 'https://cdn.paddle.com/paddle/paddle.js';
-    script.async = true;
-    script.onload = () => {
-      // Some Paddle builds require initialization with vendor id
-      try {
-        const vendor = process.env.NEXT_PUBLIC_PADDLE_VENDOR_ID;
-        if ((window as any).Paddle) {
-          try {
-            if (vendor && typeof (window as any).Paddle.Setup === 'function') {
-              (window as any).Paddle.Setup({ vendor: Number(vendor) });
-            }
-          } catch (e) {
-            console.warn('Paddle.Setup failed', e);
+  const loadPaddle = async () => {
+    if ((window as any).Paddle) return (window as any).Paddle;
+    return new Promise<any>((resolve) => {
+      const script = document.createElement('script');
+      script.src = process.env.NEXT_PUBLIC_PADDLE_JS_URL || 'https://cdn.paddle.com/paddle/paddle.js';
+      script.async = true;
+      script.onload = () => {
+        try {
+          const vendor = process.env.NEXT_PUBLIC_PADDLE_VENDOR_ID;
+          if ((window as any).Paddle && vendor && typeof (window as any).Paddle.Setup === 'function') {
+            try { (window as any).Paddle.Setup({ vendor: Number(vendor) }); } catch (e) { console.warn('Paddle.Setup failed', e); }
           }
-        }
-      } catch {}
-      init();
-    };
-    script.onerror = () => { console.warn('Failed to load Paddle script'); };
-    document.body.appendChild(script);
-    return () => { mounted = false; };
-  }, []);
+        } catch {}
+        resolve((window as any).Paddle);
+      };
+      script.onerror = () => resolve(undefined);
+      document.body.appendChild(script);
+    });
+  };
 
   const handleClick = async () => {
     setLoading(true);
-    if (!priceId || priceId.trim() === '') {
-      console.error('[PaddleCheckout] Missing priceId, aborting checkout', { priceId });
+    const effectivePriceId = priceId || process.env.NEXT_PUBLIC_PRO_PRODUCT_ID || process.env.NEXT_PUBLIC_PADDLE_PRODUCT_ID;
+    if (!effectivePriceId || String(effectivePriceId).trim() === '') {
+      console.error('[PaddleCheckout] Missing priceId, aborting checkout', { priceId, envFallbacks: { NEXT_PUBLIC_PRO_PRODUCT_ID: process.env.NEXT_PUBLIC_PRO_PRODUCT_ID, NEXT_PUBLIC_PADDLE_PRODUCT_ID: process.env.NEXT_PUBLIC_PADDLE_PRODUCT_ID } });
       alert('Payment configuration error: price ID is missing. Please contact support.');
       setLoading(false);
       return;
     }
-    console.log('[PaddleCheckout] Starting checkout flow', { priceId, userId });
-    // Open a blank popup synchronously so we can navigate to checkout URL
-    // later without being blocked by popup blockers. If window.open fails
-    // (returns null) we'll fall back to showing the inline modal.
-    let popup: Window | null = null;
-    try {
-      popup = window.open('', '_blank');
-    } catch (e) {
-      popup = null;
-    }
 
     try {
-      // create transaction on server (Paddle Billing)
-      const res = await fetch('/api/paddle-billing/checkout', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ priceId: priceId, userId: userId ?? null }),
+      const p = await loadPaddle();
+      if (!p || !p.Checkout || typeof p.Checkout.open !== 'function') {
+        console.error('[PaddleCheckout] Paddle JS not available or missing Checkout.open');
+        alert('Payment initialization failed (Paddle not available)');
+        setLoading(false);
+        return;
+      }
+
+      console.log('[PaddleCheckout] Opening overlay with priceId', { effectivePriceId, userId });
+      p.Checkout.open({
+        items: [{ priceId: effectivePriceId, quantity: 1 }],
+        settings: { displayMode: 'overlay', locale: 'en' },
+        customer: userId ? { id: userId } : undefined,
+        customData: { userId: userId } as any,
+        onComplete: () => {
+          onSuccess?.();
+          setShowSuccessToast(true);
+          setTimeout(() => setShowSuccessToast(false), 3500);
+        },
+        onClose: () => {},
       });
-      const j = await res.json();
-      // Log server response for easier debugging when overlay opens with undefined product
-      try {
-        console.log('[PaddleCheckout] create checkout response', { 
-          raw: j, 
-          priceId,
-          extractedTransaction: j.transactionId ?? j.transaction?.id,
-          extractedCheckoutUrl: j.checkoutUrl ?? j.checkout_url,
-          paddleAvailable: Boolean(paddle),
-          paddleCheckoutOpen: Boolean(paddle?.Checkout?.open)
-        });
-      } catch (e) {}
-      if (!res.ok) {
-        // Surface server error to the user for easier debugging
-        const msg = j?.error || j?.message || JSON.stringify(j);
-        console.error('Create checkout returned error:', msg);
-        alert(`Checkout failed: ${msg}`);
-        return;
-      }
-
-      const transactionId = j.transactionId ?? j.transaction?.id;
-      const checkoutUrl = j.checkoutUrl ?? j.checkout_url;
-
-      // Require transactionId for overlay checkout - never fall back to product-based checkout
-      if (!transactionId) {
-        console.warn('[PaddleCheckout] No transactionId in response, falling back to direct URL', { j });
-        if (checkoutUrl) {
-          window.location.href = checkoutUrl;
-          return;
-        }
-        alert('Checkout configuration error: no transaction ID or URL. Please contact support.');
-        return;
-      }
-
-      // Always use Paddle JS SDK for checkout when available
-      if (paddle?.Checkout?.open && typeof paddle.Checkout.open === 'function') {
-        try {
-          // close the temporary popup — overlay will be used instead
-          try { popup?.close(); } catch {}
-
-          console.log('[PaddleCheckout] Opening Paddle overlay with transaction', { transactionId });
-          
-          paddle.Checkout.open({
-            transactionId: transactionId,
-            items: [{ priceId: priceId, quantity: 1 }],
-            settings: {
-              displayMode: 'overlay',
-              theme: document.documentElement.classList.contains('dark') ? 'dark' : 'light',
-              locale: 'en',
-            },
-            onComplete: () => {
-              // show an inline success toast instead of navigating immediately
-              onSuccess?.();
-              setShowSuccessToast(true);
-              setTimeout(() => setShowSuccessToast(false), 3500);
-            },
-            onClose: () => {
-              // user closed overlay without completing; nothing to do
-            }
-          });
-          return;
-        } catch (err) {
-          console.warn('Paddle overlay open failed', err);
-          // fallthrough to fallback behavior
-        }
-      }
-
-      // If overlay isn't available, navigate the popup (if opened) to the checkout URL.
-      if (checkoutUrl) {
-        if (popup) {
-          try {
-            popup.location.href = checkoutUrl;
-            return;
-          } catch (err) {
-            // Setting location may fail; fall back to modal below
-            console.warn('Failed to navigate popup to checkout URL', err);
-            try { popup.close(); } catch {}
-            popup = null;
-          }
-        }
-
-        // If popup was blocked, show inline fallback modal with link
-        setFallbackUrl(checkoutUrl);
-        setShowFallback(true);
-        return;
-      }
-
-      alert('Failed to start checkout');
     } catch (err) {
-      console.error('Checkout failed', err);
-      alert('Checkout failed');
+      console.error('Overlay open failed', err);
+      alert('Failed to open checkout overlay');
     } finally {
       setLoading(false);
-      // Ensure we don't leave an empty popup open
-      try {
-        if (popup && !popup.closed) popup.close();
-      } catch {}
     }
   };
 
   return (
     <>
-  <button onClick={handleClick} disabled={loading} className="px-4 py-2 bg-success text-foreground rounded flex items-center gap-2">
-  {loading && <span className="inline-block w-4 h-4 border-2 border-foreground border-t-transparent rounded-full animate-spin" />}
+      <button onClick={handleClick} disabled={loading} className="px-4 py-2 bg-success text-foreground rounded flex items-center gap-2">
+        {loading && <span className="inline-block w-4 h-4 border-2 border-foreground border-t-transparent rounded-full animate-spin" />}
         <span>{children ?? (loading ? 'Starting…' : 'Upgrade to Pro')}</span>
       </button>
 
