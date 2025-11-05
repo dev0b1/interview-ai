@@ -71,8 +71,9 @@ async function requestWithRetries(url: string, opts: RequestInit = {}, retries =
 }
 
 export async function createTransaction(payload: CreatePayload): Promise<CreateResult> {
-  const apiKey = process.env.PADDLE_BILLING_API_KEY || process.env.PADDLE_API_KEY;
-  if (!apiKey) throw new Error('Paddle API key not configured (PADDLE_BILLING_API_KEY or PADDLE_API_KEY)');
+  // Use PADDLE_API_KEY as the canonical key name for consistency
+  const apiKey = process.env.PADDLE_API_KEY;
+  if (!apiKey) throw new Error('Paddle API key not configured (PADDLE_API_KEY)');
 
   // Normalize items from different caller shapes
   const items = Array.isArray(payload.items)

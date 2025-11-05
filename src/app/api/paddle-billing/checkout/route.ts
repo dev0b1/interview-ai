@@ -25,9 +25,9 @@ export async function POST(req: NextRequest) {
       headers: Object.fromEntries(req.headers.entries())
     });
 
-    // Feature-flag: require billing API key
-    if (!process.env.PADDLE_BILLING_API_KEY && !process.env.PADDLE_API_KEY) {
-      return NextResponse.json({ error: 'Paddle Billing not configured' }, { status: 400 });
+    // Require Paddle API key
+    if (!process.env.PADDLE_API_KEY) {
+      return NextResponse.json({ error: 'Paddle API key not configured' }, { status: 400 });
     }
 
     // Get base URL from environment or request headers
