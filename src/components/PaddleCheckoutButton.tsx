@@ -90,7 +90,14 @@ export default function PaddleCheckoutButton({ priceId, onSuccess, children, use
       const j = await res.json();
       // Log server response for easier debugging when overlay opens with undefined product
       try {
-        console.log('[PaddleCheckout] create checkout response', { raw: j, priceId });
+        console.log('[PaddleCheckout] create checkout response', { 
+          raw: j, 
+          priceId,
+          extractedTransaction: j.transactionId ?? j.transaction?.id,
+          extractedCheckoutUrl: j.checkoutUrl ?? j.checkout_url,
+          paddleAvailable: Boolean(paddle),
+          paddleCheckoutOpen: Boolean(paddle?.Checkout?.open)
+        });
       } catch (e) {}
       if (!res.ok) {
         // Surface server error to the user for easier debugging
@@ -102,6 +109,17 @@ export default function PaddleCheckoutButton({ priceId, onSuccess, children, use
 
       const transactionId = j.transactionId ?? j.transaction?.id;
       const checkoutUrl = j.checkoutUrl ?? j.checkout_url;
+
+      // Require transactionId for overlay checkout - never fall back to product-based checkout
+      if (!transactionId) {
+        console.warn('[PaddleCheckout] No transactionId in response, falling back to direct URL', { j });
+        if (checkoutUrl) {
+          window.location.href = checkoutUrl;
+          return;
+        }
+        alert('Checkout configuration error: no transaction ID or URL. Please contact support.');
+        return;
+      }
 
       // If Paddle overlay is available, try opening inline overlay.
       if (paddle && transactionId && typeof paddle.Checkout?.open === 'function') {

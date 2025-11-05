@@ -44,9 +44,20 @@ export async function POST(req: NextRequest) {
 
     const tx = await createTransaction(payload);
     console.log('[PaddleBilling] createTransaction result', { tx });
-    // SDK may return different shapes; try to provide common keys
-    const transactionId = tx && (tx as any).id ? (tx as any).id : (tx && (tx as any).transaction ? (tx as any).transaction.id : undefined);
-    const checkoutUrl = tx && (tx as any).checkoutUrl ? (tx as any).checkoutUrl : (tx && (tx as any).transaction ? (tx as any).transaction.checkoutUrl ?? (tx as any).transaction.checkout_url : (tx as any).checkout_url);
+    
+    // Extract transaction ID and checkout URL from response (handle different shapes)
+    const transactionId = tx?.id ?? tx?.transaction?.id;
+    const checkoutUrl = tx?.checkoutUrl ?? tx?.checkout_url ?? tx?.transaction?.checkoutUrl ?? tx?.transaction?.checkout_url;
+    
+    // Require transactionId for a valid checkout
+    if (!transactionId) {
+      console.error('[PaddleBilling] No transaction ID in Paddle response', { tx });
+      return NextResponse.json(
+        { error: 'Checkout configuration error: missing transaction ID from Paddle.' },
+        { status: 500 }
+      );
+    }
+    
     return NextResponse.json({ transactionId, checkoutUrl });
     } catch (err: unknown) {
       const msg = (err as any)?.message ?? String(err);
