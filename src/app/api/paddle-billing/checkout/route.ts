@@ -32,7 +32,7 @@ export async function POST(req: NextRequest) {
       customerEmail: customerEmail || undefined,
       customerId: customerId || undefined,
       customData: customData || undefined,
-      successUrl: successUrl,
+      success_url: successUrl,
     };
 
     const tx = await createTransaction(payload);

@@ -95,7 +95,7 @@ export async function createTransaction(payload: CreatePayload): Promise<CreateR
   if (payload.customData) body.custom_data = payload.customData;
   // support checkoutSettings.successUrl or successUrl at top-level
   const successUrl = payload.checkoutSettings?.successUrl || payload.successUrl;
-  if (successUrl) body.checkout = { url: successUrl };
+    if (successUrl) body.success_url = successUrl;
 
   const opts: RequestInit = {
     method: 'POST',
