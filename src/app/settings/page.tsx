@@ -3,12 +3,12 @@
 import React from "react";
 import { useAuth } from "../../lib/useAuth";
 import type { SupabaseClient } from '@supabase/supabase-js';
-import dynamic from 'next/dynamic';
-const PaddleCheckoutButton = dynamic(() => import('@/components/PaddleCheckoutButton'), { ssr: false });
+import { useRouter } from 'next/navigation';
 
 export default function SettingsPage() {
   const auth = useAuth();
   const { signOut } = auth;
+  const router = useRouter();
   const [dark, setDark] = React.useState(false);
   const [isPro, setIsPro] = React.useState<boolean | null>(null);
   const [userId, setUserId] = React.useState<string | undefined>(undefined);
@@ -93,35 +93,25 @@ export default function SettingsPage() {
               <div className="flex items-center gap-3">
                 <button
                   className="px-4 py-2 bg-accent text-foreground rounded"
-                  onClick={async () => {
-                    try {
-                      const productId = process.env.NEXT_PUBLIC_PADDLE_PRODUCT_ID || 'demo-product';
-                      let uid: string | undefined = userId;
-                      if (!uid) {
-                        try {
-                          const s = await auth.supabase?.auth.getUser();
-                          const user = (s as unknown as { data?: { user?: { id?: string } } })?.data?.user;
-                          if (user?.id) uid = user.id;
-                        } catch {}
-                      }
-                      const res = await fetch('/api/paddle-billing/checkout', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ priceId: productId, userId: uid }) });
-                      const j = await res.json();
-                      const url = j.checkoutUrl ?? j.checkout_url;
-                      if (url) window.location.href = url; else alert('Failed to create checkout');
-                    } catch (err) {
-                      console.error(err);
-                      alert('Payment initiation failed');
-                    }
+                  onClick={() => {
+                    const productId = process.env.NEXT_PUBLIC_PADDLE_PRODUCT_ID || process.env.NEXT_PUBLIC_PRO_PRODUCT_ID || 'demo-product';
+                    // Navigate to the checkout page which will open the Paddle overlay
+                    router.push(`/checkout?priceId=${encodeURIComponent(productId)}`);
                   }}
                 >
                   Buy $10 Credits
                 </button>
 
-                {/* Upgrade to Pro button */}
-                {/* Use Paddle.js v2 overlay when available via PaddleCheckoutButton */}
-                <PaddleCheckoutButton userId={userId ?? null}>
+                {/* Upgrade to Pro button — route-based checkout */}
+                <button
+                  className="px-4 py-2 bg-success text-foreground rounded flex items-center gap-2"
+                  onClick={() => {
+                    const productId = process.env.NEXT_PUBLIC_PADDLE_PRODUCT_ID || process.env.NEXT_PUBLIC_PRO_PRODUCT_ID || 'demo-product';
+                    router.push(`/checkout?priceId=${encodeURIComponent(productId)}`);
+                  }}
+                >
                   {isPro === true ? 'Pro — Active' : 'Upgrade to Pro'}
-                </PaddleCheckoutButton>
+                </button>
               </div>
             </div>
           </div>
