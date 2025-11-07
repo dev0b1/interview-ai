@@ -84,7 +84,7 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
 
       {/* Mobile slide-over */}
       {mobileOpen && (
-        <div className="fixed inset-0 z-50">
+        <div className="fixed inset-0 z-50 md:hidden">
           <div className="absolute inset-0 bg-surface/30" onClick={() => setMobileOpen(false)} />
           <div className="absolute left-0 top-0 bottom-0 w-72 bg-surface-2 p-4 shadow-lg overflow-auto border-r border-surface-2">
             <div className="flex items-center justify-between mb-4">
