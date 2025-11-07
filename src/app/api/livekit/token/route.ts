@@ -54,14 +54,31 @@ export async function GET(request: Request) {
     // If we have an authenticated owner, check their subscription and interview counts.
     if (ownerId) {
       try {
-        // Check for active subscription (provider-agnostic; prefer 'active' status)
+        // Check for active subscription. Prefer subscriptions table, but also
+        // fall back to the profiles.pro + pro_expires_at fields in case the
+        // subscriptions row isn't present yet.
         const { data: subs } = await supabase
           .from('subscriptions')
-          .select('status')
+          .select('status, current_period_end')
           .eq('user_id', ownerId)
           .limit(1);
 
-        const isSubscribed = Array.isArray(subs) && subs.length > 0 && subs[0].status === 'active';
+        let isSubscribed = false;
+        if (Array.isArray(subs) && subs.length > 0) {
+          const s = subs[0] as any;
+          const statusActive = s.status === 'active';
+          const periodEnd = s.current_period_end ? new Date(s.current_period_end) : null;
+          const notExpired = !periodEnd || periodEnd > new Date();
+          isSubscribed = statusActive && notExpired;
+        } else {
+          // Fallback: read profiles.pro + pro_expires_at
+          const { data: profile } = await supabase.from('profiles').select('pro, pro_expires_at').eq('id', ownerId).limit(1).maybeSingle();
+          if (profile) {
+            const pro = Boolean((profile as any).pro);
+            const expires = (profile as any).pro_expires_at ? new Date((profile as any).pro_expires_at) : null;
+            isSubscribed = pro && (!expires || expires > new Date());
+          }
+        }
 
         if (isSubscribed) {
           // Count interviews created this month

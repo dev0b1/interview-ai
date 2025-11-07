@@ -25,6 +25,7 @@ export default function DashboardPage() {
   const _auth = useAuth();
   const [history, setHistory] = React.useState<InterviewRecord[]>([]);
   const [credits, setCredits] = React.useState<number | null>(null);
+  const [isPro, setIsPro] = React.useState<boolean | null>(null);
 
   const { supabase } = _auth;
 
@@ -46,6 +47,27 @@ export default function DashboardPage() {
     }
   }, [supabase]);
 
+  const fetchPro = React.useCallback(async () => {
+    if (!supabase) return;
+    try {
+      const userRes = await supabase.auth.getUser();
+      const user = (userRes as unknown as { data?: { user?: { id?: string } } })?.data?.user;
+      if (!user?.id) {
+        setIsPro(null);
+        return;
+      }
+      const { data, error } = await supabase.from('profiles').select('pro, pro_expires_at').eq('id', user.id).limit(1).maybeSingle();
+      if (!error && data) {
+        const pro = Boolean((data as any).pro);
+        const expires = (data as any).pro_expires_at;
+        const isActive = pro && (!expires || new Date(expires) > new Date());
+        setIsPro(isActive);
+      } else setIsPro(false);
+    } catch (e) {
+      setIsPro(false);
+    }
+  }, [supabase]);
+
   React.useEffect(() => {
     setHistory(getHistory());
   }, []);
@@ -53,6 +75,7 @@ export default function DashboardPage() {
   React.useEffect(() => {
     // fetch credits once on mount
     fetchCredits();
+    fetchPro();
   }, [fetchCredits]);
 
   const recent = history.slice(0, 5);
@@ -69,7 +92,16 @@ export default function DashboardPage() {
     <div className="space-y-6">
       <div className="bg-surface rounded-2xl shadow-lg p-6">
         <h2 className="text-xl font-semibold mb-2">Dashboard</h2>
-        <p className="text-sm muted mb-4">Quick overview of recent interviews.</p>
+        <div className="flex items-center gap-3">
+          <p className="text-sm muted mb-4">Quick overview of recent interviews.</p>
+          {isPro !== null && (
+            isPro ? (
+              <span className="px-2 py-1 bg-success text-foreground rounded text-sm">Pro</span>
+            ) : (
+              <span className="px-2 py-1 bg-surface-3 text-muted rounded text-sm">Free</span>
+            )
+          )}
+        </div>
 
         <div className="grid grid-cols-3 gap-4">
           <div className="p-4 bg-surface-2 rounded">

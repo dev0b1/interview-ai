@@ -8,6 +8,10 @@ export async function POST(req: NextRequest) {
   try {
     const headerSecret = req.headers.get('x-agent-secret') || '';
     if (!SECRET || headerSecret !== SECRET) {
+      // Log mismatch for debugging but avoid printing full secrets
+      const mask = (s: string) => s ? `${String(s).slice(0, 4)}...` : '<empty>';
+      if (!SECRET) console.warn('AGENT_UPSERT_SECRET is not configured on server. Rejecting upsert request.');
+      else console.warn(`Unauthorized upsert attempt: agent secret mismatch. header=${mask(headerSecret)} serverSecret=${mask(SECRET)}`);
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 

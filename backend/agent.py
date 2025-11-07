@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from typing import List, Optional
 from enum import Enum
 from dotenv import load_dotenv
+import aiohttp
 
 from livekit import agents, rtc
 from livekit.agents import (
@@ -538,6 +539,88 @@ class RoastInterviewAgent(Agent):
             logger.info(f"📊 Final Stats: {passed_questions}/{len(ctx.questions)} passed | {total_attempts} attempts | {total_followups} followups | {ctx.filler_words_count} fillers")
             
             # End session
+            # Attempt to upsert results to the Next.js server (if configured)
+            try:
+                upsert_url = os.getenv('AGENT_UPSERT_URL')
+                upsert_secret = os.getenv('AGENT_UPSERT_SECRET')
+                if upsert_url and upsert_secret:
+                    async def _post_results():
+                        # Try to discover an interviewId from several places:
+                        interview_id = None
+                        try:
+                            # 1) check if interview_ctx has interview_id attribute
+                            interview_id = getattr(ctx, 'interview_id', None)
+                        except Exception:
+                            interview_id = None
+
+                        # 2) try room metadata
+                        try:
+                            room = self.session.room if hasattr(self.session, 'room') else None
+                            if room and hasattr(room, 'metadata') and room.metadata:
+                                try:
+                                    md = json.loads(room.metadata or '{}')
+                                    if not interview_id:
+                                        interview_id = md.get('interviewId') or md.get('interview_id') or md.get('interview')
+                                except Exception:
+                                    pass
+                        except Exception:
+                            pass
+
+                        # 3) fallback to env var
+                        if not interview_id:
+                            interview_id = os.getenv('INTERVIEW_ID') or os.getenv('AGENT_INTERVIEW_ID')
+
+                        payload = {
+                            'interviewId': interview_id,
+                            'analysis': results,  # include full results object (summary, questions_detail, etc.)
+                            'ai_feedback': results.get('summary', {}).get('notes') if isinstance(results.get('summary'), dict) else None,
+                            'internal_metrics': {
+                                'filler_words_total': ctx.filler_words_count,
+                                'total_attempts': total_attempts,
+                                'passed_questions': passed_questions,
+                            },
+                            'transcript': ctx.conversation_history,
+                            # include any recording URLs present in room metadata
+                            'video_signed_url': None,
+                            'audio_signed_url': None,
+                        }
+
+                        try:
+                            room = self.session.room if hasattr(self.session, 'room') else None
+                            if room and hasattr(room, 'metadata') and room.metadata:
+                                try:
+                                    md = json.loads(room.metadata or '{}')
+                                    payload['video_signed_url'] = md.get('video_signed_url') or md.get('videoUrl')
+                                    payload['audio_signed_url'] = md.get('audio_signed_url') or md.get('audioUrl')
+                                except Exception:
+                                    pass
+
+                        except Exception:
+                            pass
+
+                        try:
+                            async with aiohttp.ClientSession() as session_http:
+                                headers = {'Content-Type': 'application/json', 'x-agent-secret': upsert_secret}
+                                async with session_http.post(upsert_url, json=payload, headers=headers, timeout=20) as resp:
+                                    if resp.status >= 400:
+                                        text = await resp.text()
+                                        logger.warning(f"Agent upsert failed: {resp.status} {text}")
+                                    else:
+                                        logger.info("Agent results upserted successfully")
+                        except Exception as e:
+                            logger.warning(f"Exception posting upsert results: {e}")
+
+                    # fire-and-forget - don't block closing the session for long
+                    try:
+                        asyncio.create_task(_post_results())
+                    except Exception:
+                        # fallback to awaiting if create_task fails
+                        await _post_results()
+                else:
+                    logger.debug('AGENT_UPSERT_URL or AGENT_UPSERT_SECRET not configured; skipping results upsert')
+            except Exception as e:
+                logger.warning(f"Failed to initiate results upsert: {e}")
+
             await asyncio.sleep(1)
             await self.session.end()
             

@@ -20,9 +20,24 @@ export async function GET(req: NextRequest) {
       const MAX_FREE = Number(process.env.MAX_INTERVIEWS_FREE ?? '3');
       const MAX_SUB_MONTHLY = Number(process.env.MAX_INTERVIEWS_SUBSCRIBED_MONTHLY ?? '20');
 
-      // Check subscription status
-      const { data: subs } = await supabase.from('subscriptions').select('status').eq('user_id', userId).limit(1);
-      const isSubscribed = Array.isArray(subs) && subs.length > 0 && subs[0].status === 'active';
+      // Check subscription status: prefer `subscriptions` table and verify
+      // current_period_end has not passed. Fall back to profiles.pro/pro_expires_at.
+      const { data: subs } = await supabase.from('subscriptions').select('status, current_period_end').eq('user_id', userId).limit(1);
+      let isSubscribed = false;
+      if (Array.isArray(subs) && subs.length > 0) {
+        const s = subs[0] as any;
+        const active = s.status === 'active';
+        const periodEnd = s.current_period_end ? new Date(s.current_period_end) : null;
+        const notExpired = !periodEnd || periodEnd > new Date();
+        isSubscribed = active && notExpired;
+      } else {
+        const { data: profile } = await supabase.from('profiles').select('pro, pro_expires_at').eq('id', userId).limit(1).maybeSingle();
+        if (profile) {
+          const pro = Boolean((profile as any).pro);
+          const expires = (profile as any).pro_expires_at ? new Date((profile as any).pro_expires_at) : null;
+          isSubscribed = pro && (!expires || expires > new Date());
+        }
+      }
 
       if (isSubscribed) {
         const now = new Date();

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import ConditionalLayout from "../components/ConditionalLayout";
+import { ToastProvider } from "@/context/ToastContext";
 
 export const metadata: Metadata = {
   title: "AI Interview Assistant",
@@ -11,7 +12,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en">
   <body className={`antialiased text-foreground min-h-screen bg-gradient-to-br from-surface via-surface-2 to-surface`}> 
-        <ConditionalLayout>{children}</ConditionalLayout>
+        <ToastProvider>
+          <ConditionalLayout>{children}</ConditionalLayout>
+        </ToastProvider>
       </body>
     </html>
   );

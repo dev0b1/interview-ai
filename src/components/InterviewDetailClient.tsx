@@ -80,25 +80,24 @@ export default function InterviewDetailClient({ id }: { id: string }) {
   return (
     <div className="p-6">
       <h1 className="text-2xl font-bold mb-2 text-foreground">Interview {id}</h1>
-      <h2 className="text-lg font-semibold text-foreground">Metrics</h2>
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-        <div className="p-3 bg-surface-2 rounded">
-          <div className="text-sm muted">Filler words</div>
-          <div className="text-2xl font-bold text-foreground">{fillerCount}</div>
-        </div>
-        <div className="p-3 bg-surface-2 rounded">
-          <div className="text-sm muted">Pauses (&gt;2s)</div>
-          <div className="text-2xl font-bold text-foreground">{pauseCount}</div>
-        </div>
-        <div className="p-3 bg-surface-2 rounded">
-          <div className="text-sm muted">Speakers</div>
-          <div className="text-2xl font-bold text-foreground">{Object.keys(speakerMap).length}</div>
-        </div>
-      </div>
-      <pre className="bg-surface p-3 rounded text-foreground">{JSON.stringify((analysis.metrics as unknown) ?? analysis, null, 2)}</pre>
+          <h2 className="text-lg font-semibold text-foreground">Metrics</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+            <div className="p-3 bg-surface-2 rounded">
+              <div className="text-sm muted">Filler words</div>
+              <div className="text-2xl font-bold text-foreground">{fillerCount}</div>
+            </div>
+            <div className="p-3 bg-surface-2 rounded">
+              <div className="text-sm muted">AI-detected metrics</div>
+              <div className="text-sm text-foreground">{analysis && Object.keys(analysis).length ? 'See AI Feedback / metrics below' : 'No AI metrics available'}</div>
+            </div>
+          </div>
+  <pre className="bg-surface p-3 rounded text-foreground">{(analysis && Object.keys(analysis).length) ? JSON.stringify((analysis.metrics as unknown) ?? analysis, null, 2) : 'No analysis available.'}</pre>
       <h2 className="text-lg font-semibold mt-4 text-foreground">AI Feedback</h2>
       <pre className="bg-surface-2 p-3 rounded text-foreground">{String((analysis.ai_feedback as unknown) || (analysis.feedback as unknown) || '')}</pre>
       <h2 className="text-lg font-semibold mt-4 text-foreground">Transcript</h2>
+      {(!transcript || (Array.isArray(transcript) && transcript.length === 0)) ? (
+        <div className="text-sm muted mt-2">No transcript available for this interview.</div>
+      ) : null}
       {videoUrl ? (
         <div className="mt-3 mb-4">
           <video controls src={videoUrl} className="w-full" />
@@ -117,9 +116,9 @@ export default function InterviewDetailClient({ id }: { id: string }) {
         </div>
       ) : null}
       <div className="space-y-2 mt-2">
-        {transcript.map((t: TranscriptItem, i: number) => (
+        {Array.isArray(transcript) && transcript.map((t: TranscriptItem, i: number) => (
           <div key={i} className="p-2 border border-surface-2 rounded bg-surface">
-            <div className="text-sm muted">{t.speaker} • {t.ts}</div>
+            <div className="text-sm muted">{t.speaker ?? 'Speaker'}{t.ts ? ` • ${t.ts}` : ''}</div>
             <div className="text-foreground">{t.text}</div>
           </div>
         ))}

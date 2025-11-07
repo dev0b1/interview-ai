@@ -4,6 +4,7 @@ import React from "react";
 import { useAuth } from "../../lib/useAuth";
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { useRouter } from 'next/navigation';
+import Toast from '@/components/Toast';
 
 export default function SettingsPage() {
   const auth = useAuth();
@@ -12,6 +13,7 @@ export default function SettingsPage() {
   const [dark, setDark] = React.useState(false);
   const [isPro, setIsPro] = React.useState<boolean | null>(null);
   const [userId, setUserId] = React.useState<string | undefined>(undefined);
+  const [toastMsg, setToastMsg] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     document.documentElement.classList.toggle("dark", dark);
@@ -27,9 +29,12 @@ export default function SettingsPage() {
         return;
       }
       setUserId(user.id);
-      const { data, error } = await auth.supabase!.from('profiles').select('credits, pro').eq('id', user.id).limit(1).maybeSingle();
+      const { data, error } = await auth.supabase!.from('profiles').select('credits, pro, pro_expires_at').eq('id', user.id).limit(1).maybeSingle();
       if (!error && data) {
-        setIsPro(Boolean((data as unknown as ProfileRow).pro));
+        const pro = Boolean((data as unknown as ProfileRow).pro);
+        const expires = (data as any).pro_expires_at;
+        const isActive = pro && (!expires || new Date(expires) > new Date());
+        setIsPro(isActive);
       } else {
         setIsPro(false);
       }
@@ -50,7 +55,8 @@ export default function SettingsPage() {
       if (cancelled) return;
       await fetchProfile();
       if (isPro === true) {
-        // done
+        // show toast and finish
+        setToastMsg('Payment successful — your account is now Pro');
         // remove query param to avoid repeated polling
         const u = new URL(window.location.href);
         u.searchParams.delete('payment');
@@ -66,7 +72,16 @@ export default function SettingsPage() {
 
   return (
     <div className="bg-surface rounded-2xl shadow-lg p-6 space-y-4">
-      <h2 className="text-xl font-semibold">Settings</h2>
+      <div className="flex items-center justify-between">
+        <h2 className="text-xl font-semibold">Settings</h2>
+        <div>
+          {isPro === null ? null : isPro ? (
+            <span className="px-2 py-1 text-sm bg-success text-foreground rounded">Pro</span>
+          ) : (
+            <span className="px-2 py-1 text-sm bg-surface-3 text-muted rounded">Free</span>
+          )}
+        </div>
+      </div>
 
       <div className="flex items-center justify-between">
         <div>
@@ -139,6 +154,8 @@ export default function SettingsPage() {
             </button>
           </div>
         </div>
+        {/* toast for payment success */}
+        {toastMsg && <Toast message={toastMsg} onClose={() => setToastMsg(null)} />}
       </div>
     </div>
   );

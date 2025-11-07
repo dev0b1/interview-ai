@@ -77,6 +77,8 @@ async function run() {
     path.join(__dirname, '..', 'supabase', 'migrations', '20251010_create_checkout_sessions.sql'),
     path.join(__dirname, '..', 'supabase', 'migrations', '20251011_create_public_users.sql'),
     path.join(__dirname, '..', 'supabase', 'migrations', '20251012_create_profiles.sql'),
+    // New migration for Paddle billing fields added on 2025-11-07
+    path.join(__dirname, '..', 'supabase', 'migrations', '20251107_add_paddle_fields.sql'),
   ];
 
   // Helper: sleep for ms
