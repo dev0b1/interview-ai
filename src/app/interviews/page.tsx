@@ -12,7 +12,7 @@ export default async function InterviewsPage() {
 
   return (
     <div className="p-6">
-      <h1 className="text-2xl font-bold mb-4">Interviews</h1>
+      <h1 className="text-2xl font-bold mb-4">Hroasts</h1>
       <ul className="space-y-2">
         {items.map((it) => (
           <li key={it.id}>

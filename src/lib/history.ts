@@ -7,7 +7,7 @@ export type InterviewRecord = {
   notes?: string;
 };
 
-const KEY = "interview_ai_history";
+const KEY = "hroast_history";
 
 export function getHistory(): InterviewRecord[] {
   try {
@@ -38,7 +38,7 @@ export function clearHistory() {
 // Return any pending uploads stored in the IndexedDB by InterviewRoom
 export async function getPendingUploads(): Promise<Array<{ id: string; ts: number }>> {
   try {
-    const req = indexedDB.open('interview-ai-uploads', 1);
+    const req = indexedDB.open('hroast-uploads', 1);
     return await new Promise((resolve) => {
       req.onsuccess = () => {
         try {

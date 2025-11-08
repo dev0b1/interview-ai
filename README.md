@@ -1,4 +1,4 @@
-# interview-ai
+# Hroast
 
 Next.js (App Router) + TypeScript starter with Tailwind CSS.
 
@@ -59,4 +59,4 @@ npm install @supabase/supabase-js drizzle-orm drizzle-kit
 4. Run the migration and then start the dev server.
 
 If you want, I can add `drizzle-kit` config and a npm script to run migrations.
-# interview-ai
+# Hroast

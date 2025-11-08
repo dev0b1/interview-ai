@@ -12,7 +12,7 @@ export default function LandingPage() {
       {/* Navigation */}
       <nav className="border-b border-surface-2">
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
-          <div className="text-xl font-semibold text-foreground">InterviewAI</div>
+          <div className="text-xl font-semibold text-foreground">Hroast</div>
           <div className="flex items-center gap-6">
             <Link href="/auth" className="muted hover:text-foreground">Sign in</Link>
             <Link href="/interview" className="px-4 py-2 bg-accent text-foreground rounded-md hover:bg-accent-2">
@@ -33,10 +33,10 @@ export default function LandingPage() {
             className="max-w-3xl"
           >
             <h1 className="text-6xl font-bold text-foreground mb-6 leading-tight">
-              Ace your next interview with AI-powered practice
+              Ace your next Hroast with AI-powered practice
             </h1>
             <p className="text-xl muted mb-10 leading-relaxed">
-              Practice real-time voice interviews, get instant feedback on your performance, and track your improvement over time. Build confidence before the interview that matters.
+              Practice real-time voice Hroasts, get instant feedback on your performance, and track your improvement over time. Build confidence before the Hroast that matters.
             </p>
             <div className="flex items-center gap-4">
               <Link 
@@ -62,7 +62,7 @@ export default function LandingPage() {
             <div className="grid grid-cols-3 gap-12">
               <div>
                 <div className="text-4xl font-bold text-foreground mb-2">12,000+</div>
-                <div className="muted">Practice interviews completed</div>
+                <div className="muted">Practice Hroasts completed</div>
               </div>
               <div>
                 <div className="text-4xl font-bold text-foreground mb-2">89%</div>
@@ -90,9 +90,9 @@ export default function LandingPage() {
             <div className="grid grid-cols-2 gap-16">
               <div>
                 <div className="w-12 h-12 bg-accent rounded-lg mb-6" />
-                <h3 className="text-2xl font-semibold text-foreground mb-4">Real-time voice interviews</h3>
+                <h3 className="text-2xl font-semibold text-foreground mb-4">Real-time voice Hroasts</h3>
                 <p className="muted leading-relaxed">
-                  Practice with an AI interviewer that conducts natural conversations. Answer questions out loud and get follow-ups based on your responses, just like a real interview.
+                  Practice with an AI Hroast interviewer that conducts natural conversations. Answer questions out loud and get follow-ups based on your responses, just like a real Hroast.
                 </p>
               </div>
 
@@ -100,15 +100,15 @@ export default function LandingPage() {
                 <div className="w-12 h-12 bg-accent rounded-lg mb-6" />
                 <h3 className="text-2xl font-semibold text-foreground mb-4">Instant performance analysis</h3>
                 <p className="muted leading-relaxed">
-                  Get detailed feedback immediately after each interview. See your confidence score, speaking pace, filler word usage, and receive personalized tips to improve.
+                  Get detailed feedback immediately after each Hroast. See your confidence score, speaking pace, filler word usage, and receive personalized tips to improve.
                 </p>
               </div>
 
               <div>
                 <div className="w-12 h-12 bg-accent rounded-lg mb-6" />
-                <h3 className="text-2xl font-semibold text-foreground mb-4">Interview transcripts</h3>
+                <h3 className="text-2xl font-semibold text-foreground mb-4">Hroast transcripts</h3>
                 <p className="muted leading-relaxed">
-                  Review full transcripts of every interview. Analyze your answers, identify patterns in your responses, and refine your talking points for real interviews.
+                  Review full transcripts of every Hroast. Analyze your answers, identify patterns in your responses, and refine your talking points for real Hroasts.
                 </p>
               </div>
 
@@ -135,7 +135,7 @@ export default function LandingPage() {
             >
               <h2 className="text-4xl font-bold mb-6 text-foreground">How it works</h2>
               <p className="text-xl muted mb-16 max-w-2xl">
-                Get interview-ready in minutes, not weeks
+                Get Hroast-ready in minutes, not weeks
               </p>
 
               <div className="grid grid-cols-3 gap-12">
@@ -149,9 +149,9 @@ export default function LandingPage() {
 
                 <div>
                   <div className="text-6xl font-bold muted mb-6">02</div>
-                  <h3 className="text-xl font-semibold mb-3">Start the interview</h3>
+                  <h3 className="text-xl font-semibold mb-3">Start the Hroast</h3>
                   <p className="muted leading-relaxed">
-                    Click record and begin speaking. The AI interviewer will ask questions and respond naturally to your answers in real-time.
+                    Click record and begin speaking. The AI Hroast interviewer will ask questions and respond naturally to your answers in real-time.
                   </p>
                 </div>
 
@@ -250,7 +250,7 @@ export default function LandingPage() {
                 href="/interview" 
                 className="inline-block px-8 py-4 bg-accent text-foreground font-medium rounded-lg hover:bg-accent-2 transition-colors"
               >
-                Start your first interview
+                Start your first Hroast
               </Link>
               <p className="text-sm muted mt-6">Free to start • No credit card required</p>
             </motion.div>

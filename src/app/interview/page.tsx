@@ -55,7 +55,7 @@ const INTERVIEW_ROLES = [
   { id: "embedded", label: "Embedded Systems Engineer" },
   { id: "frontend", label: "Frontend Developer" },
   { id: "fullstack", label: "Full Stack Developer" },
-  { id: "general", label: "General Interview" },
+  { id: "general", label: "General Hroast" },
   { id: "infrastructure", label: "Infrastructure Engineer" },
   { id: "ml_engineer", label: "Machine Learning Engineer" },
   { id: "mobile", label: "Mobile Engineer (iOS / Android)" },
@@ -136,7 +136,7 @@ function useAgentMessages() {
           }
         }
 
-        // Handle interview complete
+  // Handle Hroast complete
         if (data.type === 'interview_complete' || data.type === 'agent.interview_complete') {
           const results = data.results || data;
           const scoreObj = results.score;
@@ -211,7 +211,7 @@ function InterviewConfigPublisher({
           topic: topic || "General",
           num_questions: TOTAL_QUESTIONS,
           interviewId: interviewId || null,
-          instruction: `Conduct a roast interview about ${topic} with ${name}. Ask ${TOTAL_QUESTIONS} questions total.`,
+          instruction: `Conduct a roast Hroast about ${topic} with ${name}. Ask ${TOTAL_QUESTIONS} questions total.`,
         };
 
         const encoder = new TextEncoder();
@@ -220,7 +220,7 @@ function InterviewConfigPublisher({
         localParticipant.publishData(data, { reliable: true });
 
         setPublished(true);
-        console.log("✅ Published interview config to agent");
+  console.log("✅ Published Hroast config to agent");
       } catch (err) {
         console.error("Failed to publish config:", err);
       }
@@ -314,7 +314,7 @@ function InterviewControls({
         onClick={onEndInterview}
         className="px-4 py-2 bg-surface-2 text-foreground rounded-lg transition font-semibold shadow-lg hover:bg-surface"
       >
-        End Interview
+        End Hroast
       </button>
     </div>
   );
@@ -669,15 +669,15 @@ export default function InterviewPage() {
     try {
       await navigator.mediaDevices.getUserMedia({ audio: true });
 
-      const { fetchLivekitToken } = await import("../../lib/fetchLivekitToken");
-      const resp = await fetchLivekitToken(userName, "interview-room");
+  const { fetchLivekitToken } = await import("../../lib/fetchLivekitToken");
+  const resp = await fetchLivekitToken(userName, "hroast-room");
 
       if (!resp?.token) {
         throw new Error("Failed to get token");
       }
 
       setToken(resp.token);
-      const newInterviewId = resp.interviewId || `interview-${Date.now()}`;
+  const newInterviewId = resp.interviewId || `hroast-${Date.now()}`;
       setInterviewId(newInterviewId);
 
       if (resp.interviewId) {
@@ -712,8 +712,8 @@ export default function InterviewPage() {
       if (t) setIsInterviewStarted(true);
       else throw new Error('Failed to obtain token');
     } catch (err) {
-      console.error('Failed to start interview:', err);
-      alert('Failed to start interview. See console for details.');
+  console.error('Failed to start Hroast:', err);
+  alert('Failed to start Hroast. See console for details.');
     }
   };
 
@@ -770,7 +770,7 @@ export default function InterviewPage() {
         {!isInterviewStarted && (
           <div className="mt-4 bg-surface/50 rounded-xl p-6 border-2 border-accent/20">
             <label className="block text-sm font-medium text-foreground mb-3">
-              Select Interview Role
+              Select Hroast Role
             </label>
             <select
               value={selectedRole}
@@ -787,7 +787,7 @@ export default function InterviewPage() {
             {limits && (
               <div className="mb-3 text-sm">
                 {limits.anonymous ? (
-                  <div className="text-foreground/70">Sign in to track interview limits.</div>
+                  <div className="text-foreground/70">Sign in to track Hroast limits.</div>
                 ) : limits.isSubscribed ? (
                   <div className="flex items-center justify-between">
                     <div className="text-foreground/90">Subscribed — {limits.usedThisMonth ?? 0}/{limits.limit} this month</div>
@@ -811,7 +811,7 @@ export default function InterviewPage() {
               disabled={connecting}
               className="w-full px-6 py-4 bg-accent text-foreground rounded-lg font-semibold text-lg hover:bg-accent-2 transform transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-xl"
             >
-              {connecting ? 'Connecting…' : '🚀 Start Roast Interview'}
+              {connecting ? 'Connecting…' : '🚀 Start Hroast'}
             </button>
           </div>
         )}
@@ -820,9 +820,9 @@ export default function InterviewPage() {
           <div className="fixed inset-0 z-50 pointer-events-none flex items-center justify-center">
             <div className="absolute inset-0 bg-surface/60 pointer-events-auto" onClick={() => setShowEndConfirm(false)} />
             <div className="bg-surface-2 rounded-xl shadow-2xl p-6 z-10 w-full max-w-md border border-surface-2 pointer-events-auto">
-              <h3 className="text-lg font-semibold mb-2 text-foreground">End interview?</h3>
+              <h3 className="text-lg font-semibold mb-2 text-foreground">End Hroast?</h3>
               <p className="text-sm text-foreground/70 mb-6">
-                Are you sure you want to end the interview? This will disconnect you from the room.
+                Are you sure you want to end the Hroast? This will disconnect you from the room.
               </p>
               <div className="flex gap-3 justify-end">
                 <button
@@ -838,7 +838,7 @@ export default function InterviewPage() {
                   }}
                   className="px-4 py-2 bg-danger text-foreground rounded-lg hover:bg-danger/90"
                 >
-                  End Interview
+                  End Hroast
                 </button>
               </div>
             </div>

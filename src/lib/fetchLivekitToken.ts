@@ -1,4 +1,4 @@
-export async function fetchLivekitToken(name: string, room = "interview-room") {
+export async function fetchLivekitToken(name: string, room = "hroast-room") {
   const res = await fetch(`/api/livekit/token?username=${encodeURIComponent(name)}&room=${encodeURIComponent(room)}`);
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));

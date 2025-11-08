@@ -93,7 +93,7 @@ export default function DashboardPage() {
       <div className="bg-surface rounded-2xl shadow-lg p-6">
         <h2 className="text-xl font-semibold mb-2">Dashboard</h2>
         <div className="flex items-center gap-3">
-          <p className="text-sm muted mb-4">Quick overview of recent interviews.</p>
+          <p className="text-sm muted mb-4">Quick overview of recent Hroasts.</p>
           {isPro !== null && (
             isPro ? (
               <span className="px-2 py-1 bg-success text-foreground rounded text-sm">Pro</span>
@@ -105,7 +105,7 @@ export default function DashboardPage() {
 
         <div className="grid grid-cols-3 gap-4">
           <div className="p-4 bg-surface-2 rounded">
-            <div className="text-sm muted">Total Interviews</div>
+            <div className="text-sm muted">Total Hroasts</div>
             <div className="text-2xl font-bold">{history.length}</div>
           </div>
           <div className="p-4 bg-surface-2 rounded">
@@ -135,8 +135,8 @@ export default function DashboardPage() {
         <div className="mt-3 text-sm muted">Credits are granted automatically after successful payments.</div>
       </div>
       <div className="bg-surface rounded-2xl shadow-lg p-6">
-        <h3 className="text-lg font-semibold mb-3">Post-interview analysis</h3>
-        <p className="text-sm muted mb-4">Quick metrics from your recent interviews.</p>
+  <h3 className="text-lg font-semibold mb-3">Post-Hroast analysis</h3>
+  <p className="text-sm muted mb-4">Quick metrics from your recent Hroasts.</p>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="p-4 bg-surface-2 rounded">
             <div className="text-sm muted">Avg. Score</div>
@@ -159,10 +159,10 @@ export default function DashboardPage() {
             })()}</div>
           </div>
         </div>
-        <div className="mt-4 text-sm muted">Click an interview in Recent Interviews for a detailed report.</div>
+  <div className="mt-4 text-sm muted">Click a Hroast in Recent Hroasts for a detailed report.</div>
       </div>
       <div className="bg-surface rounded-2xl shadow-lg p-6">
-        <h3 className="text-lg font-semibold mb-3">Recent Interviews</h3>
+  <h3 className="text-lg font-semibold mb-3">Recent Hroasts</h3>
         {recent.length ? (
           <ul className="space-y-3">
             {recent.map((r) => (
@@ -176,7 +176,7 @@ export default function DashboardPage() {
             ))}
           </ul>
         ) : (
-          <div className="text-sm muted">No interviews yet.</div>
+          <div className="text-sm muted">No Hroasts yet.</div>
         )}
       </div>
     </div>

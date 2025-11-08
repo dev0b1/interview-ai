@@ -33,7 +33,7 @@ export default function AuthPage() {
       <div className="container mx-auto px-6 py-12">
         <div className="max-w-md mx-auto bg-surface rounded-2xl shadow-lg p-8">
           <h2 className="text-2xl font-semibold mb-4">Sign in</h2>
-          <p className="text-sm muted mb-6">Sign in with Google to access your interviews.</p>
+          <p className="text-sm muted mb-6">Sign in with Google to access your Hroasts.</p>
 
           <button
             onClick={handleGoogleSignIn}

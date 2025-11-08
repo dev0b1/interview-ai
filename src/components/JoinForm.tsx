@@ -8,13 +8,13 @@ type Props = {
 
 export default function JoinForm({ onStart }: Props) {
   const [name, setName] = React.useState("");
-  const [room, setRoom] = React.useState("interview-room");
+  const [room, setRoom] = React.useState("hroast-room");
 
   return (
     <form
       onSubmit={(e) => {
         e.preventDefault();
-        if (name.trim()) onStart(name.trim(), room.trim() || "interview-room");
+        if (name.trim()) onStart(name.trim(), room.trim() || "hroast-room");
       }}
       className="w-full max-w-md mx-auto"
     >
@@ -35,9 +35,9 @@ export default function JoinForm({ onStart }: Props) {
           value={room}
           onChange={(e) => setRoom(e.target.value)}
           className="w-full px-4 py-2 border border-surface-2 rounded-md focus:ring-2 focus:ring-accent/40 transition bg-transparent text-foreground"
-          placeholder="interview-room"
+          placeholder="hroast-room"
         />
-        <p className="mt-2 text-xs muted">You can leave the room name as-is to join the public interview room.</p>
+        <p className="mt-2 text-xs muted">You can leave the room name as-is to join the public Hroast room.</p>
       </div>
 
       <div className="grid grid-cols-2 gap-3">
@@ -48,7 +48,7 @@ export default function JoinForm({ onStart }: Props) {
           <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
             <path d="M10 2a1 1 0 00-.993.883L9 3v6.586L5.707 7.293a1 1 0 00-1.414 1.414l5 5a1 1 0 001.414 0l5-5a1 1 0 00-1.414-1.414L11 9.586V3a1 1 0 00-1-1z" />
           </svg>
-          Start Interview
+          Start Hroast
         </button>
       </div>
     </form>

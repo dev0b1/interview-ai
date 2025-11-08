@@ -79,7 +79,7 @@ export default function InterviewDetailClient({ id }: { id: string }) {
 
   return (
     <div className="p-6">
-      <h1 className="text-2xl font-bold mb-2 text-foreground">Interview {id}</h1>
+      <h1 className="text-2xl font-bold mb-2 text-foreground">Hroast {id}</h1>
           <h2 className="text-lg font-semibold text-foreground">Metrics</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
             <div className="p-3 bg-surface-2 rounded">
@@ -96,7 +96,7 @@ export default function InterviewDetailClient({ id }: { id: string }) {
       <pre className="bg-surface-2 p-3 rounded text-foreground">{String((analysis.ai_feedback as unknown) || (analysis.feedback as unknown) || '')}</pre>
       <h2 className="text-lg font-semibold mt-4 text-foreground">Transcript</h2>
       {(!transcript || (Array.isArray(transcript) && transcript.length === 0)) ? (
-        <div className="text-sm muted mt-2">No transcript available for this interview.</div>
+        <div className="text-sm muted mt-2">No transcript available for this Hroast.</div>
       ) : null}
       {videoUrl ? (
         <div className="mt-3 mb-4">

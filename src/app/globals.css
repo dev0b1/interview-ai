@@ -3,7 +3,7 @@
 @tailwind utilities;
 
 :root {
-  /* Core palette (interview theme) */
+  /* Core palette (Hroast theme) */
   --background: #0b1020; /* dark navy */
   --background-2: #0f1724; /* slightly lighter */
   --surface: rgba(30, 41, 59, 0.6); /* slate-ish panel */

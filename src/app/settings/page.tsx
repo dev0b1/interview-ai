@@ -103,7 +103,7 @@ export default function SettingsPage() {
         <div className="space-y-4">
           <div className="bg-surface-2 p-4 rounded">
             <h3 className="font-medium">Buy Credits</h3>
-            <p className="text-sm muted">Buy interview credits to unlock paid features.</p>
+            <p className="text-sm muted">Buy Hroast credits to unlock paid features.</p>
             <div className="mt-2">
               <div className="flex items-center gap-3">
                 <button

@@ -48,7 +48,7 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
         {/* Sidebar for md+ screens */}
           <aside className="hidden md:flex md:flex-col md:w-72 bg-surface/60 backdrop-blur border-r border-surface-2 p-6 sticky top-0 h-screen">
             <div className="flex-1">
-              <div className="text-2xl font-bold mb-6">InterviewAI</div>
+              <div className="text-2xl font-bold mb-6">Hroast</div>
               <div className="space-y-6">
                 <Sidebar />
               </div>
@@ -87,7 +87,7 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
 
           {/* Top header for main area (md+) */}
           <header className="hidden md:flex items-center justify-between mb-6">
-            <h1 className="text-2xl font-semibold text-foreground">Live Interview</h1>
+            <h1 className="text-2xl font-semibold text-foreground">Live Hroast</h1>
             <div className="text-sm">
               <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-surface-2 text-foreground">
                 <span className="w-2 h-2 bg-danger rounded-full" />
@@ -106,7 +106,7 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
           <div className="absolute inset-0 bg-surface/30 pointer-events-auto" onClick={() => setMobileOpen(false)} />
           <div className="absolute left-0 top-0 bottom-0 w-72 bg-surface-2 p-4 shadow-lg overflow-auto border-r border-surface-2 pointer-events-auto">
             <div className="flex items-center justify-between mb-4">
-              <div className="text-lg font-bold">InterviewAI</div>
+              <div className="text-lg font-bold">Hroast</div>
               <button onClick={() => setMobileOpen(false)} aria-label="Close menu" className="p-2 rounded-md">
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
                   <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />

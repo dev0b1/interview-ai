@@ -3,7 +3,7 @@
 import React from 'react';
 import { useAuth } from '../lib/useAuth';
 
-export default function RecordingRefresh({ interviewId, roomName = 'interview-room' }: { interviewId: string; roomName?: string }) {
+export default function RecordingRefresh({ interviewId, roomName = 'hroast-room' }: { interviewId: string; roomName?: string }) {
   const [status, setStatus] = React.useState<'idle' | 'loading' | 'done' | 'error'>('idle');
   const [msg, setMsg] = React.useState<string | null>(null);
   const { session } = useAuth();

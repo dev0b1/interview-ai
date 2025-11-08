@@ -4,8 +4,8 @@ import ConditionalLayout from "../components/ConditionalLayout";
 import { ToastProvider } from "@/context/ToastContext";
 
 export const metadata: Metadata = {
-  title: "AI Interview Assistant",
-  description: "Real-time AI interview assistant",
+  title: "Hroast",
+  description: "Real-time AI roast interviewer",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

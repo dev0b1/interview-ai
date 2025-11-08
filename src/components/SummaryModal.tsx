@@ -10,7 +10,7 @@ export default function SummaryModal({ open, onClose, summary }: { open: boolean
     <div className="fixed inset-0 z-50 pointer-events-none flex items-center justify-center">
       <div className="absolute inset-0 bg-surface/40 pointer-events-auto" onClick={onClose} />
       <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="bg-surface rounded-2xl shadow-lg p-6 z-10 w-full max-w-md border border-surface-2 pointer-events-auto">
-        <h3 className="text-lg font-semibold mb-2 text-foreground">Your Interview Summary</h3>
+  <h3 className="text-lg font-semibold mb-2 text-foreground">Your Hroast Summary</h3>
         <div className="grid grid-cols-3 gap-3 mb-4">
           <div className="p-3 bg-surface-2 rounded text-center">
             <div className="text-sm muted">Score</div>

@@ -20,7 +20,7 @@ export default function ShareControls({ audioUrl }: { audioUrl?: string | null }
     if (!audioUrl) return;
     if (navigator.share) {
       try {
-        await navigator.share({ title: 'Interview recording', url: audioUrl });
+  await navigator.share({ title: 'Hroast recording', url: audioUrl });
       } catch {
         // ignore
       }

@@ -65,7 +65,7 @@ export default function HistoryPage() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "interview-history.json";
+  a.download = "hroast-history.json";
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -127,7 +127,7 @@ export default function HistoryPage() {
         </ul>
         </>
       ) : (
-        <div className="text-sm muted">No saved interviews.</div>
+        <div className="text-sm muted">No saved Hroasts.</div>
       )}
     </div>
   );

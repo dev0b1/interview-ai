@@ -23,7 +23,7 @@ from livekit.plugins import silero, openai, deepgram
 load_dotenv()
 
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("interview-agent")
+logger = logging.getLogger("hroast-agent")
 
 
 # ==============================
