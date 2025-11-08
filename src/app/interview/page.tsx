@@ -1,5 +1,6 @@
 /**
- * Real-time Interview with AI Agent - Viral-Ready UI
+ * Complete Real-time Interview Frontend - Simplified (No Follow-ups)
+ * With Timer and Question Counter
  */
 
 "use client";
@@ -14,25 +15,17 @@ import {
   useLocalParticipant,
   useRemoteParticipants,
   RoomAudioRenderer,
-  useDataChannel,
   useTracks,
   BarVisualizer,
-  useTranscriptions,
 } from "@livekit/components-react";
 import { Track } from "livekit-client";
 import type { Room } from "livekit-client";
-import TranscriptPanel, { Entry } from "../../components/TranscriptPanel";
 import { saveInterview } from "../../lib/history";
 import SummaryModal from "../../components/SummaryModal";
 
 // ============================================================================
 // TYPES
 // ============================================================================
-
-interface AgentDataMessage {
-  type: string;
-  [key: string]: unknown;
-}
 
 interface InterviewSummary {
   score: number;
@@ -48,7 +41,7 @@ interface InterviewSummary {
 }
 
 // ============================================================================
-// CONFIGURATION OPTIONS
+// CONFIGURATION
 // ============================================================================
 
 const INTERVIEW_ROLES = [
@@ -78,149 +71,115 @@ const INTERVIEW_ROLES = [
   { id: "ux", label: "UX / Product Designer" },
 ];
 
+const TOTAL_QUESTIONS = 5;
+
 // ============================================================================
 // HOOKS
 // ============================================================================
 
-function useAgentMessages() {
-  const [greeting, setGreeting] = React.useState<string | null>(null);
-  const [summary, setSummary] = React.useState<InterviewSummary | null>(null);
-  const [behaviorFlags, setBehaviorFlags] = React.useState<string[]>([]);
-  const [confidence, setConfidence] = React.useState<number | null>(null);
-  const [professionalism, setProfessionalism] = React.useState<number | null>(null);
-  const [roastMessages, setRoastMessages] = React.useState<string[]>([]);
-  const [fillerWords, setFillerWords] = React.useState<number>(0);
-  const [latestRoast, setLatestRoast] = React.useState<string | null>(null);
+function useInterviewTimer(isActive: boolean) {
+  const [seconds, setSeconds] = React.useState(0);
+  
+  React.useEffect(() => {
+    if (!isActive) return;
+    
+    const interval = setInterval(() => {
+      setSeconds(s => s + 1);
+    }, 1000);
+    
+    return () => clearInterval(interval);
+  }, [isActive]);
+  
+  const formatTime = (totalSeconds: number) => {
+    const mins = Math.floor(totalSeconds / 60);
+    const secs = totalSeconds % 60;
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
+  
+  return { seconds, formattedTime: formatTime(seconds) };
+}
 
-  const { message: msgAgent } = useDataChannel("agent-messages");
-  const { message: msgInterview } = useDataChannel("interview_results");
-  const { message: msgLiveMetrics } = useDataChannel("live-metrics");
+function useAgentMessages() {
+  const [summary, setSummary] = React.useState<InterviewSummary | null>(null);
+  const [currentQuestion, setCurrentQuestion] = React.useState(1);
+  const [fillerWords, setFillerWords] = React.useState(0);
+  const [latestRoast, setLatestRoast] = React.useState<string | null>(null);
+  const [roastMessages, setRoastMessages] = React.useState<string[]>([]);
+
+  const room = useRoomContext();
 
   React.useEffect(() => {
-    const process = (messageVar: unknown) => {
-      if (!messageVar) return;
+    if (!room) return;
+
+    const handleData = (
+      payload: Uint8Array,
+      participant: any,
+      kind: any,
+      topic?: string
+    ) => {
       try {
-        const mv = messageVar as { payload?: Uint8Array; topic?: string };
-        const text = new TextDecoder().decode(mv.payload as Uint8Array);
-        const data = JSON.parse(text) as AgentDataMessage | Record<string, unknown>;
+        const text = new TextDecoder().decode(payload);
+        const data = JSON.parse(text);
 
-        const type = data?.type || data?.event || null;
-
-        switch (type) {
-          case "agent.greeting":
-            setGreeting(data.text as string || data.message as string);
-            break;
-
-          case "interview_complete":
-          case "agent.interview_complete":
-            const results = ((data as Record<string, unknown>)['results'] ?? data) as Record<string, unknown> | undefined;
-            if (results) {
-              const scoreObj = results['score'] as Record<string, unknown> | undefined;
-              const overall = scoreObj && typeof scoreObj === 'object' ? Number(scoreObj['overall_score'] as number || 0) : 0;
-              const tone = String(results['personality'] || '');
-              const ai_fb = String(results['ai_feedback'] || results['aiFeedback'] || '');
-              setSummary({
-                score: overall,
-                tone,
-                pacing: "",
-                notes: ai_fb,
-                metrics: {},
-                ai_feedback: ai_fb,
-              });
-            }
-            break;
-
-          case "agent.behavior_flag":
-            setBehaviorFlags((prev) => [...prev, ...(data.issues as string[] || [])]);
-            if ((data as Record<string, unknown>)['message']) {
-              const msg = String((data as Record<string, unknown>)['message']);
-              setLatestRoast(msg);
-              setRoastMessages((r) => [msg, ...r].slice(0, 5));
-            }
-            break;
-
-          case "agent.post_interview_summary":
-            const metricsRec = (data as Record<string, unknown>)['metrics'] as Record<string, unknown> | undefined;
-            const conf = metricsRec ? Number(metricsRec['confidence'] as number ?? metricsRec['clarity'] as number ?? NaN) : NaN;
-            const prof = metricsRec ? Number(metricsRec['professionalism'] as number ?? NaN) : NaN;
-            if (!Number.isNaN(conf)) setConfidence(Math.round(conf / 10));
-            if (!Number.isNaN(prof)) setProfessionalism(Math.round(prof / 10));
-            setSummary({
-              score: (data.metrics as { clarity?: number })?.clarity || 0,
-              tone: "Professional",
-              pacing: "Good",
-              notes: (data.ai_feedback as string) || "",
-              metrics: data.metrics as InterviewSummary["metrics"],
-              ai_feedback: (data.ai_feedback as string),
-            });
-            if ((data as Record<string, unknown>)['ai_feedback']) {
-              const msg = String((data as Record<string, unknown>)['ai_feedback']);
-              setLatestRoast(msg);
-              setRoastMessages((r) => [msg, ...r].slice(0, 5));
-            }
-            break;
-        }
-      } catch (err) {
-        console.warn("Failed to parse agent message:", err);
-      }
-    };
-
-    process(msgAgent);
-    process(msgInterview);
-    
-    try {
-      if (msgLiveMetrics) {
-        const mv = msgLiveMetrics as { payload?: Uint8Array };
-        const text = new TextDecoder().decode(mv.payload as Uint8Array);
-        const d = JSON.parse(text) as Record<string, unknown> | null;
-        if (d) {
-          const confRaw = Number(d['confidence_score'] ?? d['confidence'] ?? NaN);
-          const profRaw = Number(d['professionalism_score'] ?? d['professionalism'] ?? NaN);
-          const fillerRaw = Number(d['filler_count_total'] ?? d['filler_words'] ?? d['filler_word_count'] ?? NaN);
-          if (!Number.isNaN(confRaw)) setConfidence(Math.round(confRaw / 10));
-          if (!Number.isNaN(profRaw)) setProfessionalism(Math.round(profRaw / 10));
-          if (!Number.isNaN(fillerRaw)) setFillerWords(fillerRaw);
-          if (d['ai_feedback']) {
-            const msg = String(d['ai_feedback']);
+        // Handle live metrics
+        if (topic === 'live-metrics' || data.type === 'live_metrics') {
+          if (data.question_number) {
+            setCurrentQuestion(data.question_number);
+          }
+          if (data.filler_count_total !== undefined) {
+            setFillerWords(data.filler_count_total);
+          }
+          if (data.ai_feedback) {
+            const msg = String(data.ai_feedback);
             setLatestRoast(msg);
             setRoastMessages((r) => [msg, ...r].slice(0, 5));
           }
         }
+
+        // Handle interview complete
+        if (data.type === 'interview_complete' || data.type === 'agent.interview_complete') {
+          const results = data.results || data;
+          const scoreObj = results.score;
+          const overall = scoreObj && typeof scoreObj === 'object' 
+            ? Number(scoreObj.overall_score || 0) 
+            : Number(results.overall_score || 0);
+          
+          setSummary({
+            score: overall,
+            tone: String(results.personality || 'Professional'),
+            pacing: "Good",
+            notes: String(results.ai_feedback || results.aiFeedback || ''),
+            metrics: results.metrics || {},
+            ai_feedback: String(results.ai_feedback || results.aiFeedback || ''),
+          });
+        }
+
+        // Handle behavior flags (roasts)
+        if (data.type === 'agent.behavior_flag') {
+          if (data.message) {
+            const msg = String(data.message);
+            setLatestRoast(msg);
+            setRoastMessages((r) => [msg, ...r].slice(0, 5));
+          }
+        }
+      } catch (err) {
+        console.warn('Failed to parse data:', err);
       }
-    } catch (err) {
-      console.warn('Failed to parse live-metrics message', err);
-    }
-  }, [msgAgent, msgInterview, msgLiveMetrics]);
+    };
 
-  return { greeting, summary, behaviorFlags, setGreeting, confidence, professionalism, roastMessages, fillerWords, latestRoast };
-}
+    room.on('dataReceived', handleData);
+    return () => {
+      room.off('dataReceived', handleData);
+    };
+  }, [room]);
 
-function useInterviewTranscript(): Entry[] {
-  const transcriptions = useTranscriptions();
-  const { localParticipant } = useLocalParticipant();
-  
-  const entries = React.useMemo((): Entry[] => {
-    if (!transcriptions || transcriptions.length === 0) return [];
-    
-    return transcriptions.map((transcription): Entry => {
-      const data = transcription as unknown as { 
-        text?: string; 
-        participant?: { identity?: string };
-        participantIdentity?: string;
-      };
-      
-      const participantId = data.participantIdentity || data.participant?.identity;
-      const isLocal = participantId === localParticipant?.identity;
-      
-      return {
-        who: isLocal ? 'User' : 'AI',
-        text: data.text || '',
-        ts: Date.now(),
-      };
-    }).filter(entry => entry.text.trim().length > 0);
-  }, [transcriptions, localParticipant]);
-
-  return entries;
+  return { 
+    summary, 
+    currentQuestion, 
+    fillerWords, 
+    latestRoast, 
+    roastMessages 
+  };
 }
 
 // ============================================================================
@@ -250,9 +209,9 @@ function InterviewConfigPublisher({
           type: "agent.instruction",
           name: name || "Candidate",
           topic: topic || "General",
-          personality: 'roast',
+          num_questions: TOTAL_QUESTIONS,
           interviewId: interviewId || null,
-          instruction: `Conduct a roast interview about ${topic} with ${name}.`,
+          instruction: `Conduct a roast interview about ${topic} with ${name}. Ask ${TOTAL_QUESTIONS} questions total.`,
         };
 
         const encoder = new TextEncoder();
@@ -283,21 +242,9 @@ function InterviewControls({
   interviewId?: string | null;
 }) {
   const { localParticipant } = useLocalParticipant();
-  const [isMuted, setIsMuted] = React.useState(false);
   const [isRecording, setIsRecording] = React.useState(false);
   const [egressId, setEgressId] = React.useState<string | null>(null);
   const room = useRoomContext();
-
-  const toggleMute = async () => {
-    if (!localParticipant) return;
-    
-    try {
-      await localParticipant.setMicrophoneEnabled(!isMuted);
-      setIsMuted(!isMuted);
-    } catch (err) {
-      console.error("Failed to toggle mute:", err);
-    }
-  };
 
   const startRecording = async () => {
     try {
@@ -373,6 +320,34 @@ function InterviewControls({
   );
 }
 
+function QuestionProgress({ current, total }: { current: number; total: number }) {
+  return (
+    <div className="bg-surface/50 rounded-lg px-4 py-2 border-2 border-accent/20">
+      <div className="flex items-center gap-3">
+        <div className="text-xs font-semibold text-foreground/70">Question</div>
+        <div className="flex items-center gap-2">
+          <div className="text-2xl font-bold text-accent">#{current}</div>
+          <div className="text-sm text-foreground/60">of {total}</div>
+        </div>
+        <div className="flex gap-1">
+          {Array.from({ length: total }).map((_, i) => (
+            <div
+              key={i}
+              className={`w-2 h-2 rounded-full transition-colors ${
+                i < current 
+                  ? 'bg-success' 
+                  : i === current 
+                  ? 'bg-accent animate-pulse' 
+                  : 'bg-surface-2'
+              }`}
+            />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function InterviewRoomContent({
   name,
   topic,
@@ -386,16 +361,21 @@ function InterviewRoomContent({
   isInterviewStarted: boolean;
   onEndInterview: () => void;
 }) {
-  const { greeting, summary, behaviorFlags, setGreeting, confidence, professionalism, roastMessages, fillerWords, latestRoast } = useAgentMessages();
-  const entries = useInterviewTranscript();
+  const { 
+    summary, 
+    currentQuestion, 
+    fillerWords, 
+    latestRoast, 
+    roastMessages 
+  } = useAgentMessages();
+  
   const room = useRoomContext();
   const remotes = useRemoteParticipants();
   const { localParticipant } = useLocalParticipant();
+  const { formattedTime } = useInterviewTimer(isInterviewStarted);
   
-  // Generate random user count for social proof (2000-5000)
-  const [userCount] = React.useState(() => Math.floor(Math.random() * (5000 - 2000 + 1)) + 2000);
+  const [userCount] = React.useState(() => Math.floor(Math.random() * 3001) + 2000);
   
-  // Get AI agent's audio track (remote participant)
   const remoteTracks = useTracks([Track.Source.Microphone], {
     onlySubscribed: true,
   });
@@ -427,21 +407,33 @@ function InterviewRoomContent({
         />
       )}
 
-      {/* Header - Only show when interview is active and agent has joined */}
+      {/* Header - Timer and Question Progress */}
       {isInterviewStarted && isConnected && remotes.length > 0 && (
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-foreground">🔥 Roast Mode: Active</h2>
-          <div className="flex items-center gap-2">
-            <div className="w-2 h-2 bg-success rounded-full"></div>
-            <span className="muted text-sm">AI Agent Connected</span>
+        <motion.div 
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="flex items-center justify-between gap-4 flex-wrap mb-4"
+        >
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 bg-surface/50 rounded-lg px-3 py-2 border-2 border-accent/20">
+              <div className="w-2 h-2 bg-success rounded-full animate-pulse"></div>
+              <span className="text-sm font-semibold text-foreground">🔥 Roast Mode Active</span>
+            </div>
+            
+            <div className="flex items-center gap-2 bg-surface/50 rounded-lg px-3 py-2 border-2 border-accent/20">
+              <span className="text-lg">⏱️</span>
+              <span className="text-sm font-mono font-bold text-foreground">{formattedTime}</span>
+            </div>
           </div>
-        </div>
+          
+          <QuestionProgress current={currentQuestion} total={TOTAL_QUESTIONS} />
+        </motion.div>
       )}
 
       {/* Main Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* Center: AI Avatar + Audio Viz - Card Background */}
-        <div className="lg:col-span-2 bg-surface/50 rounded-xl p-6 border-2 border-accent/30 flex flex-col items-center justify-center">
+        {/* Center: AI Avatar + Audio Viz */}
+        <div className="lg:col-span-2 bg-surface/50 rounded-xl p-6 border-2 border-accent/30 flex flex-col items-center justify-center min-h-[400px]">
           {/* AI Avatar */}
           <div className="relative mb-4">
             <div className="w-40 h-40 rounded-full bg-gradient-to-br from-accent via-accent-2 to-accent-2 flex items-center justify-center shadow-xl">
@@ -450,13 +442,17 @@ function InterviewRoomContent({
               </div>
             </div>
             {isInterviewStarted && isConnected && remotes.length > 0 && (
-              <div className="absolute -bottom-2 left-1/2 transform -translate-x-1/2 px-3 py-1 bg-success text-foreground text-xs rounded-full font-medium">
+              <motion.div 
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
+                className="absolute -bottom-2 left-1/2 transform -translate-x-1/2 px-3 py-1 bg-success text-foreground text-xs rounded-full font-medium"
+              >
                 AI Agent Active
-              </div>
+              </motion.div>
             )}
           </div>
 
-          {/* Audio Visualizer - Shows AI Agent Speaking */}
+          {/* Audio Visualizer */}
           {isInterviewStarted && agentAudioTrack && (
             <div className="w-full max-w-md">
               <BarVisualizer 
@@ -465,38 +461,48 @@ function InterviewRoomContent({
                 trackRef={agentAudioTrack}
                 className="h-16 [&>div]:bg-accent"
               />
-              <p className="text-center muted text-xs mt-2">
+              <p className="text-center text-foreground/60 text-xs mt-2">
                 Analyzing your filler words, tone and clarity
               </p>
             </div>
           )}
           
-          {/* Fallback when agent hasn't joined yet */}
+          {/* Waiting for agent */}
           {isInterviewStarted && !agentAudioTrack && (
             <div className="w-full max-w-md">
               <div className="h-16 flex flex-col items-center justify-center gap-2">
                 <div className="flex gap-1">
-                  <div className="w-2 h-2 bg-accent rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
-                  <div className="w-2 h-2 bg-accent rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
-                  <div className="w-2 h-2 bg-accent rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+                  {[0, 150, 300].map((delay, i) => (
+                    <div 
+                      key={i}
+                      className="w-2 h-2 bg-accent rounded-full animate-bounce" 
+                      style={{ animationDelay: `${delay}ms` }}
+                    />
+                  ))}
                 </div>
-                <p className="text-foreground text-sm font-medium">Waiting for AI agent...</p>
+                <p className="text-foreground text-sm font-medium">Connecting to AI agent...</p>
               </div>
             </div>
           )}
 
-          {/* Latest Roast - Highlighted */}
-          {isInterviewStarted && latestRoast && (
-            <div className="mt-4 w-full max-w-md bg-accent/10 border-2 border-accent/40 rounded-lg p-3">
-              <div className="flex items-start gap-2">
-                <span className="text-xl">💬</span>
-                <div className="flex-1">
-                  <div className="text-xs font-semibold text-accent mb-1">LATEST ROAST</div>
-                  <p className="text-foreground text-xs font-medium">&quot;{latestRoast}&quot;</p>
+          {/* Latest Roast */}
+            {isInterviewStarted && latestRoast && (
+              <motion.div
+                key={latestRoast}
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.9 }}
+                className="mt-4 w-full max-w-md bg-accent/10 border-2 border-accent/40 rounded-lg p-3"
+              >
+                <div className="flex items-start gap-2">
+                  <span className="text-xl">💬</span>
+                  <div className="flex-1">
+                    <div className="text-xs font-semibold text-accent mb-1">LATEST ROAST</div>
+                    <p className="text-foreground text-xs font-medium">&quot;{latestRoast}&quot;</p>
+                  </div>
                 </div>
-              </div>
-            </div>
-          )}
+              </motion.div>
+            )}
 
           {/* Controls */}
           <div className="mt-4">
@@ -508,36 +514,41 @@ function InterviewRoomContent({
           </div>
         </div>
 
-        {/* Right: Metrics Panel OR Social Proof Banner */}
+        {/* Right: Metrics Panel */}
         {isInterviewStarted ? (
           <div className="bg-surface/50 rounded-xl p-4 border-2 border-accent/20">
             <div className="space-y-4">
+              {/* Current Question */}
+              <div className="pb-3 border-b-2 border-accent/20">
+                <div className="text-xs font-semibold text-foreground/70 mb-1">Current Question</div>
+                <div className="flex items-baseline gap-2">
+                  <div className="text-3xl font-bold text-accent">#{currentQuestion}</div>
+                  <div className="text-sm text-foreground/60">of {TOTAL_QUESTIONS}</div>
+                </div>
+              </div>
+
               {/* Filler Words */}
               <div>
                 <div className="text-foreground font-semibold text-xs mb-1">Filler Words</div>
                 <div className="text-4xl font-bold text-foreground">{fillerWords}</div>
-              </div>
-
-              {/* Confidence */}
-              <div>
-                <div className="text-foreground font-semibold text-xs mb-1">Confidence</div>
-                <div className="text-4xl font-bold text-foreground">
-                  {confidence !== null ? `${confidence}/10` : '--'}
+                <div className="text-xs text-foreground/60 mt-1">
+                  {fillerWords === 0 && '🎯 Perfect!'}
+                  {fillerWords > 0 && fillerWords <= 3 && '👍 Good'}
+                  {fillerWords > 3 && fillerWords <= 6 && '⚠️ Watch out'}
+                  {fillerWords > 6 && '🔥 Getting roasted'}
                 </div>
               </div>
 
-              {/* Professionalism */}
+              {/* Time Elapsed */}
               <div>
-                <div className="text-foreground font-semibold text-xs mb-1">Professionalism</div>
-                <div className="text-4xl font-bold text-foreground">
-                  {professionalism !== null ? `${professionalism}/10` : '--'}
-                </div>
+                <div className="text-foreground font-semibold text-xs mb-1">Time Elapsed</div>
+                <div className="text-2xl font-mono font-bold text-foreground">{formattedTime}</div>
               </div>
 
-              {/* Real-time Tips */}
+              {/* Recent Roasts */}
               <div className="pt-3 border-t-2 border-accent/20">
                 <div className="text-foreground font-semibold text-xs mb-2">Recent Feedback</div>
-                <div className="space-y-1 max-h-24 overflow-y-auto">
+                <div className="space-y-1 max-h-32 overflow-y-auto">
                   {roastMessages.length > 0 ? (
                     roastMessages.slice(0, 3).map((msg, i) => (
                       <div key={i} className="text-foreground/80 text-xs leading-tight">• {msg}</div>
@@ -628,7 +639,6 @@ export default function InterviewPage() {
            "Candidate";
   }, [session]);
 
-  // Fetch interview limits for the current user so we can show remaining count
   React.useEffect(() => {
     let mounted = true;
     const fetchLimits = async () => {
@@ -757,58 +767,53 @@ export default function InterviewPage() {
           />
         </LiveKitRoom>
 
-        {/* Bottom Section: Social Proof + Role Selection */}
         {!isInterviewStarted && (
-          <>
-            {/* Role Selection - Full width below */}
-            <div className="mt-4 bg-surface/50 rounded-xl p-6 border-2 border-accent/20">
-              <label className="block text-sm font-medium text-foreground mb-3">
-                Select Interview Role
-              </label>
-              <select
-                value={selectedRole}
-                onChange={(e) => setSelectedRole(e.target.value)}
-                className="w-full px-4 py-3 bg-surface-2 border-2 border-surface-2 rounded-lg text-foreground focus:ring-2 focus:ring-accent/40 focus:border-accent/50 mb-4"
-              >
-                {INTERVIEW_ROLES.map((role) => (
-                  <option key={role.id} value={role.id}>
-                    {role.label}
-                  </option>
-                ))}
-              </select>
+          <div className="mt-4 bg-surface/50 rounded-xl p-6 border-2 border-accent/20">
+            <label className="block text-sm font-medium text-foreground mb-3">
+              Select Interview Role
+            </label>
+            <select
+              value={selectedRole}
+              onChange={(e) => setSelectedRole(e.target.value)}
+              className="w-full px-4 py-3 bg-surface-2 border-2 border-surface-2 rounded-lg text-foreground focus:ring-2 focus:ring-accent/40 focus:border-accent/50 mb-4"
+            >
+              {INTERVIEW_ROLES.map((role) => (
+                <option key={role.id} value={role.id}>
+                  {role.label}
+                </option>
+              ))}
+            </select>
 
-              {/* Interview limits indicator */}
-              {limits && (
-                <div className="mb-3 text-sm">
-                  {limits.anonymous ? (
-                    <div className="text-foreground/70">Sign in to track interview limits.</div>
-                  ) : limits.isSubscribed ? (
-                    <div className="flex items-center justify-between">
-                      <div className="text-foreground/90">Subscribed — {limits.usedThisMonth ?? 0}/{limits.limit} this month</div>
-                      <div className={`px-2 py-1 rounded text-xs font-medium ${((limits.remaining ?? 0) <= 0) ? 'bg-danger text-foreground' : 'bg-success/10 text-success'}`}>
-                        {limits.remaining ?? 0} remaining
-                      </div>
+            {limits && (
+              <div className="mb-3 text-sm">
+                {limits.anonymous ? (
+                  <div className="text-foreground/70">Sign in to track interview limits.</div>
+                ) : limits.isSubscribed ? (
+                  <div className="flex items-center justify-between">
+                    <div className="text-foreground/90">Subscribed — {limits.usedThisMonth ?? 0}/{limits.limit} this month</div>
+                    <div className={`px-2 py-1 rounded text-xs font-medium ${((limits.remaining ?? 0) <= 0) ? 'bg-danger text-foreground' : 'bg-success/10 text-success'}`}>
+                      {limits.remaining ?? 0} remaining
                     </div>
-                  ) : (
-                    <div className="flex items-center justify-between">
-                      <div className="text-foreground/90">Free — {limits.usedTotal ?? 0}/{limits.limit} used</div>
-                      <div className={`px-2 py-1 rounded text-xs font-medium ${((limits.remaining ?? 0) <= 0) ? 'bg-danger text-foreground' : 'bg-accent/10 text-accent'}`}>
-                        {limits.remaining ?? 0} remaining
-                      </div>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between">
+                    <div className="text-foreground/90">Free — {limits.usedTotal ?? 0}/{limits.limit} used</div>
+                    <div className={`px-2 py-1 rounded text-xs font-medium ${((limits.remaining ?? 0) <= 0) ? 'bg-danger text-foreground' : 'bg-accent/10 text-accent'}`}>
+                      {limits.remaining ?? 0} remaining
                     </div>
-                  )}
-                </div>
-              )}
+                  </div>
+                )}
+              </div>
+            )}
 
-              <button
-                onClick={handleStartInterview}
-                disabled={connecting}
-                className="w-full px-6 py-4 bg-accent text-foreground rounded-lg font-semibold text-lg hover:bg-accent-2 transform transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-xl"
-              >
-                {connecting ? 'Connecting…' : '🚀 Start Roast Interview'}
-              </button>
-            </div>
-          </>
+            <button
+              onClick={handleStartInterview}
+              disabled={connecting}
+              className="w-full px-6 py-4 bg-accent text-foreground rounded-lg font-semibold text-lg hover:bg-accent-2 transform transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-xl"
+            >
+              {connecting ? 'Connecting…' : '🚀 Start Roast Interview'}
+            </button>
+          </div>
         )}
 
         {showEndConfirm && (
@@ -816,7 +821,7 @@ export default function InterviewPage() {
             <div className="absolute inset-0 bg-surface/60 pointer-events-auto" onClick={() => setShowEndConfirm(false)} />
             <div className="bg-surface-2 rounded-xl shadow-2xl p-6 z-10 w-full max-w-md border border-surface-2 pointer-events-auto">
               <h3 className="text-lg font-semibold mb-2 text-foreground">End interview?</h3>
-              <p className="text-sm muted mb-6">
+              <p className="text-sm text-foreground/70 mb-6">
                 Are you sure you want to end the interview? This will disconnect you from the room.
               </p>
               <div className="flex gap-3 justify-end">

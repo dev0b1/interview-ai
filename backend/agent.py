@@ -36,11 +36,6 @@ class InterviewType(Enum):
     GENERAL = "general"
 
 
-class QuestionPhase(Enum):
-    MAIN_QUESTION = "main"
-    FOLLOWUP = "followup"
-
-
 @dataclass
 class InterviewConfig:
     interview_type: InterviewType = InterviewType.GENERAL
@@ -48,19 +43,16 @@ class InterviewConfig:
     company_name: str = "Our Company"
     job_title: str = "Software Developer"
     max_attempts_per_question: int = 3
-    max_followups_per_question: int = 2
 
 
 @dataclass
 class QuestionState:
-    """Track state for each main question"""
+    """Track state for each question"""
     question: str
     attempts: int = 0
     passed: bool = False
     responses: List[str] = field(default_factory=list)
     feedback: List[str] = field(default_factory=list)
-    followup_count: int = 0
-    followup_responses: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -70,13 +62,13 @@ class InterviewContext:
     questions: List[str] = field(default_factory=list)
     question_states: List[QuestionState] = field(default_factory=list)
     current_question_index: int = 0
-    current_phase: QuestionPhase = QuestionPhase.MAIN_QUESTION
     responses: List[str] = field(default_factory=list)
     start_time: datetime = field(default_factory=datetime.now)
     conversation_history: List[dict] = field(default_factory=list)
     filler_words_count: int = 0
     interview_ended: bool = False
     waiting_for_user: bool = True
+    interview_id: Optional[str] = None
 
 
 # ==============================
@@ -228,7 +220,7 @@ def check_answer_quality(text: str, filler_count: int) -> tuple[bool, str, int]:
 #       AGENT CLASS
 # ==============================
 class RoastInterviewAgent(Agent):
-    """Brutally honest AI interview coach with retry and followup logic"""
+    """Brutally honest AI interview coach - SIMPLIFIED (no follow-ups)"""
     
     def __init__(self, interview_ctx: InterviewContext):
         ctx = interview_ctx
@@ -245,29 +237,21 @@ class RoastInterviewAgent(Agent):
             f"You are a brutally honest AI interview coach conducting a {config.interview_type.value} interview "
             f"for {config.job_title} at {config.company_name}.\n\n"
             f"### ROAST MODE RULES:\n"
-            f"- {config.num_questions} main questions total\n"
+            f"- {config.num_questions} questions total\n"
             f"- Each question: {config.max_attempts_per_question} attempts max\n"
-            f"- After good answer: Ask {config.max_followups_per_question} followup questions to dig deeper\n"
-            f"- After followups OR failed attempts: Move to next main question\n"
             f"- Count filler words ALOUD every time\n"
-            f"- Be brutal but constructive\n\n"
-            f"### YOUR {len(ctx.questions)} MAIN QUESTIONS:\n{questions_list}\n\n"
+            f"- Be brutal but constructive\n"
+            f"- After max attempts, move to next question\n\n"
+            f"### YOUR {len(ctx.questions)} QUESTIONS:\n{questions_list}\n\n"
             f"### RESPONSE PATTERNS:\n\n"
             f"**IF ANSWER IS BAD (attempts 1-2):**\n"
             f"'I counted [X] ums and [Y] likes. That's unacceptable. [Why it's weak]. Be specific. Try again.'\n\n"
             f"**IF ANSWER IS BAD (attempt 3 - FINAL):**\n"
-            f"'Still weak after 3 tries. Moving on. Next question: [Next main question]'\n\n"
+            f"'Still weak after 3 tries. Moving on. Next question: [Next question]'\n\n"
             f"**IF ANSWER IS GOOD:**\n"
-            f"'Better! [Brief praise]. Let me dig deeper: [Followup question]'\n\n"
-            f"**FOLLOWUP QUESTIONS (ask {config.max_followups_per_question} per main question):**\n"
-            f"- 'What specific metrics or results came from that?'\n"
-            f"- 'What challenges did you face and how did you overcome them?'\n"
-            f"- 'What would you do differently if you had to do it again?'\n"
-            f"- 'How did that experience change your approach?'\n\n"
-            f"**AFTER {config.max_followups_per_question} FOLLOWUPS:**\n"
-            f"'Okay, moving on. Next question: [Next main question]'\n\n"
-            f"**AFTER ALL {config.num_questions} MAIN QUESTIONS:**\n"
-            f"'Interview complete. Here's my honest assessment: [Brutal feedback on performance, filler count, hire recommendation Yes/Maybe/No]'\n\n"
+            f"'Solid answer! [Brief praise]. Moving on. Next question: [Next question]'\n\n"
+            f"**AFTER ALL {config.num_questions} QUESTIONS:**\n"
+            f"'Interview complete. Here's my honest assessment: [Brutal feedback on performance, total filler count, hire recommendation Yes/Maybe/No]'\n\n"
             f"Always be direct. Always count fillers. Always demand specifics."
         )
         
@@ -275,7 +259,7 @@ class RoastInterviewAgent(Agent):
         self.interview_ctx = interview_ctx
 
     async def on_user_speech_committed(self, message: ChatMessage):
-        """Analyze response and handle retry/followup logic"""
+        """Analyze response and handle retry logic"""
         ctx = self.interview_ctx
         text = message.content
         
@@ -297,15 +281,12 @@ class RoastInterviewAgent(Agent):
         confidence_score = calculate_confidence_score(text)
         professionalism_score = calculate_professionalism_score(text, filler_count)
         
-        # Handle based on phase
-        if ctx.current_phase == QuestionPhase.MAIN_QUESTION:
-            await self._handle_main_answer(q_state, text, filler_count, found_fillers, confidence_score, professionalism_score)
-        else:  # FOLLOWUP
-            await self._handle_followup_answer(q_state, text, filler_count, found_fillers, confidence_score, professionalism_score)
+        # Handle answer
+        await self._handle_answer(q_state, text, filler_count, found_fillers, confidence_score, professionalism_score)
 
-    async def _handle_main_answer(self, q_state: QuestionState, text: str, filler_count: int, 
-                                    found_fillers: List[str], confidence_score: int, professionalism_score: int):
-        """Handle answer to main question"""
+    async def _handle_answer(self, q_state: QuestionState, text: str, filler_count: int, 
+                            found_fillers: List[str], confidence_score: int, professionalism_score: int):
+        """Handle answer to question"""
         ctx = self.interview_ctx
         
         q_state.attempts += 1
@@ -317,7 +298,7 @@ class RoastInterviewAgent(Agent):
         q_state.feedback.append(feedback)
         
         # Log
-        logger.info(f"👤 MAIN Q{ctx.current_question_index + 1} Attempt {q_state.attempts}/{ctx.config.max_attempts_per_question}: {text[:80]}...")
+        logger.info(f"👤 Q{ctx.current_question_index + 1} Attempt {q_state.attempts}/{ctx.config.max_attempts_per_question}: {text[:80]}...")
         logger.info(f"📊 Fillers: {', '.join(found_fillers) if found_fillers else '0'} | Quality: {quality_score}/100 | {'✅ PASS' if passed else '❌ FAIL'}")
         
         # Store
@@ -327,7 +308,6 @@ class RoastInterviewAgent(Agent):
             "content": text,
             "timestamp": datetime.now().isoformat(),
             "question_index": ctx.current_question_index,
-            "phase": "main_question",
             "attempt": q_state.attempts,
             "metrics": {
                 "confidence": confidence_score,
@@ -342,14 +322,12 @@ class RoastInterviewAgent(Agent):
         await self._publish_metrics(confidence_score, professionalism_score, filler_count, quality_score)
         
         # Decide next action
-        if passed:
-            # Good answer - move to followups
-            logger.info(f"✅ Answer passed - moving to followups (max {ctx.config.max_followups_per_question})")
-            ctx.current_phase = QuestionPhase.FOLLOWUP
-            ctx.waiting_for_user = True
-        elif q_state.attempts >= ctx.config.max_attempts_per_question:
-            # Max attempts - move to next question
-            logger.info(f"❌ Max attempts ({ctx.config.max_attempts_per_question}) reached - moving to next question")
+        if passed or q_state.attempts >= ctx.config.max_attempts_per_question:
+            # Move to next question
+            if passed:
+                logger.info(f"✅ Answer passed - moving to next question")
+            else:
+                logger.info(f"❌ Max attempts ({ctx.config.max_attempts_per_question}) reached - moving to next question")
             await self._move_to_next_question()
         else:
             # Allow retry
@@ -357,54 +335,14 @@ class RoastInterviewAgent(Agent):
             logger.info(f"🔄 Retry allowed - {remaining} attempt(s) remaining")
             ctx.waiting_for_user = True
 
-    async def _handle_followup_answer(self, q_state: QuestionState, text: str, filler_count: int,
-                                       found_fillers: List[str], confidence_score: int, professionalism_score: int):
-        """Handle answer to followup question"""
-        ctx = self.interview_ctx
-        
-        q_state.followup_count += 1
-        q_state.followup_responses.append(text)
-        
-        # Log
-        logger.info(f"👤 FOLLOWUP {q_state.followup_count}/{ctx.config.max_followups_per_question} for Q{ctx.current_question_index + 1}: {text[:80]}...")
-        logger.info(f"📊 Fillers: {', '.join(found_fillers) if found_fillers else '0'}")
-        
-        # Store
-        ctx.responses.append(text)
-        ctx.conversation_history.append({
-            "role": "user",
-            "content": text,
-            "timestamp": datetime.now().isoformat(),
-            "question_index": ctx.current_question_index,
-            "phase": "followup",
-            "followup_number": q_state.followup_count,
-            "metrics": {
-                "confidence": confidence_score,
-                "professionalism": professionalism_score,
-                "filler_count": filler_count,
-            }
-        })
-        
-        # Publish metrics
-        await self._publish_metrics(confidence_score, professionalism_score, filler_count, 0)
-        
-        # Check if done with followups
-        if q_state.followup_count >= ctx.config.max_followups_per_question:
-            logger.info(f"✅ Followups complete - moving to next question")
-            await self._move_to_next_question()
-        else:
-            logger.info(f"🔄 Asking next followup ({q_state.followup_count + 1}/{ctx.config.max_followups_per_question})")
-            ctx.waiting_for_user = True
-
     async def _move_to_next_question(self):
-        """Move to next main question or end interview"""
+        """Move to next question or end interview"""
         ctx = self.interview_ctx
         
         ctx.current_question_index += 1
-        ctx.current_phase = QuestionPhase.MAIN_QUESTION
         
         if ctx.current_question_index >= len(ctx.questions):
-            logger.info("🏁 All questions complete - ending interview")
+            logger.info("🎯 All questions complete - ending interview")
             ctx.interview_ended = True
         else:
             logger.info(f"➡️ Moving to question {ctx.current_question_index + 1}/{len(ctx.questions)}")
@@ -420,10 +358,9 @@ class RoastInterviewAgent(Agent):
             "content": text,
             "timestamp": datetime.now().isoformat(),
             "question_index": ctx.current_question_index,
-            "phase": ctx.current_phase.value,
         })
         
-        logger.info(f"🤖 AGENT [{ctx.current_phase.value.upper()}]: {text[:100]}...")
+        logger.info(f"🤖 AGENT: {text[:100]}...")
         
         # Check if interview should end
         if ctx.interview_ended:
@@ -440,12 +377,11 @@ class RoastInterviewAgent(Agent):
             f"for {ctx.config.job_title} at {ctx.config.company_name}. "
             f"I'm in ROAST MODE. Here's how this works: I have {ctx.config.num_questions} questions. "
             f"You get up to {ctx.config.max_attempts_per_question} tries per question. "
-            f"If you answer well, I'll ask {ctx.config.max_followups_per_question} followup questions. "
             f"I'll count every filler word and call out vague answers. "
-            f"Ready? Let's start. {ctx.questions[0]}"
+            f"Ready? Question 1: {ctx.questions[0]}"
         )
         
-        logger.info(f"🔥 Starting ROAST MODE - {len(ctx.questions)} questions, {ctx.config.max_attempts_per_question} attempts each, {ctx.config.max_followups_per_question} followups")
+        logger.info(f"🔥 Starting ROAST MODE - {len(ctx.questions)} questions, {ctx.config.max_attempts_per_question} attempts each")
         await self.session.say(greeting, allow_interruptions=True)
 
     async def _publish_metrics(self, confidence: int, professionalism: int, filler_count: int, quality_score: int):
@@ -458,34 +394,38 @@ class RoastInterviewAgent(Agent):
             ctx = self.interview_ctx
             current_q = ctx.question_states[ctx.current_question_index] if ctx.current_question_index < len(ctx.question_states) else None
             
-            payload = json.dumps({
+            payload = {
                 "type": "live_metrics",
                 "question_number": ctx.current_question_index + 1,
                 "total_questions": len(ctx.questions),
-                "phase": ctx.current_phase.value,
-                "current_attempt": current_q.attempts if current_q and ctx.current_phase == QuestionPhase.MAIN_QUESTION else 0,
+                "current_attempt": current_q.attempts if current_q else 0,
                 "max_attempts": ctx.config.max_attempts_per_question,
-                "followup_count": current_q.followup_count if current_q else 0,
-                "max_followups": ctx.config.max_followups_per_question,
                 "confidence_score": confidence,
                 "professionalism_score": professionalism,
                 "quality_score": quality_score,
                 "filler_count_this_response": filler_count,
                 "filler_count_total": ctx.filler_words_count,
                 "interview_ended": ctx.interview_ended,
-            }).encode()
+                "timestamp": datetime.now().isoformat(),
+            }
             
+            # Encode as JSON string then to bytes
+            data = json.dumps(payload).encode('utf-8')
+            
+            # Publish to data channel
             await room.local_participant.publish_data(
-                payload, 
+                data,
                 kind=rtc.DataPacketKind.KIND_RELIABLE,
                 topic="live-metrics"
             )
+            
+            logger.debug(f"📊 Published metrics: Q{payload['question_number']}, Fillers: {payload['filler_count_total']}")
             
         except Exception as e:
             logger.warning(f"Failed to publish metrics: {e}")
 
     async def _save_and_end(self):
-        """Save results with complete stats"""
+        """Save results"""
         try:
             ctx = self.interview_ctx
             duration = (datetime.now() - ctx.start_time).total_seconds() / 60
@@ -493,7 +433,6 @@ class RoastInterviewAgent(Agent):
             # Calculate stats
             total_attempts = sum(q.attempts for q in ctx.question_states)
             passed_questions = sum(1 for q in ctx.question_states if q.passed)
-            total_followups = sum(q.followup_count for q in ctx.question_states)
             
             results = {
                 "candidate": ctx.candidate_name,
@@ -506,7 +445,6 @@ class RoastInterviewAgent(Agent):
                     "questions_passed": passed_questions,
                     "questions_failed": len(ctx.questions) - passed_questions,
                     "total_attempts": total_attempts,
-                    "total_followups_asked": total_followups,
                     "filler_words_total": ctx.filler_words_count,
                     "pass_rate": f"{(passed_questions / len(ctx.questions) * 100):.1f}%",
                 },
@@ -516,9 +454,7 @@ class RoastInterviewAgent(Agent):
                         "question": q.question,
                         "attempts": q.attempts,
                         "passed": q.passed,
-                        "main_responses": q.responses,
-                        "followup_count": q.followup_count,
-                        "followup_responses": q.followup_responses,
+                        "responses": q.responses,
                         "feedback": q.feedback,
                     }
                     for i, q in enumerate(ctx.question_states)
@@ -536,91 +472,38 @@ class RoastInterviewAgent(Agent):
                 json.dump(results, f, indent=2)
             
             logger.info(f"💾 Saved: {filepath}")
-            logger.info(f"📊 Final Stats: {passed_questions}/{len(ctx.questions)} passed | {total_attempts} attempts | {total_followups} followups | {ctx.filler_words_count} fillers")
+            logger.info(f"📊 Final Stats: {passed_questions}/{len(ctx.questions)} passed | {total_attempts} attempts | {ctx.filler_words_count} fillers")
             
-            # End session
-            # Attempt to upsert results to the Next.js server (if configured)
+            # Try to upsert results to Next.js server
             try:
                 upsert_url = os.getenv('AGENT_UPSERT_URL')
                 upsert_secret = os.getenv('AGENT_UPSERT_SECRET')
                 if upsert_url and upsert_secret:
-                    async def _post_results():
-                        # Try to discover an interviewId from several places:
-                        interview_id = None
-                        try:
-                            # 1) check if interview_ctx has interview_id attribute
-                            interview_id = getattr(ctx, 'interview_id', None)
-                        except Exception:
-                            interview_id = None
-
-                        # 2) try room metadata
-                        try:
-                            room = self.session.room if hasattr(self.session, 'room') else None
-                            if room and hasattr(room, 'metadata') and room.metadata:
-                                try:
-                                    md = json.loads(room.metadata or '{}')
-                                    if not interview_id:
-                                        interview_id = md.get('interviewId') or md.get('interview_id') or md.get('interview')
-                                except Exception:
-                                    pass
-                        except Exception:
-                            pass
-
-                        # 3) fallback to env var
-                        if not interview_id:
-                            interview_id = os.getenv('INTERVIEW_ID') or os.getenv('AGENT_INTERVIEW_ID')
-
-                        payload = {
-                            'interviewId': interview_id,
-                            'analysis': results,  # include full results object (summary, questions_detail, etc.)
-                            'ai_feedback': results.get('summary', {}).get('notes') if isinstance(results.get('summary'), dict) else None,
-                            'internal_metrics': {
-                                'filler_words_total': ctx.filler_words_count,
-                                'total_attempts': total_attempts,
-                                'passed_questions': passed_questions,
-                            },
-                            'transcript': ctx.conversation_history,
-                            # include any recording URLs present in room metadata
-                            'video_signed_url': None,
-                            'audio_signed_url': None,
-                        }
-
-                        try:
-                            room = self.session.room if hasattr(self.session, 'room') else None
-                            if room and hasattr(room, 'metadata') and room.metadata:
-                                try:
-                                    md = json.loads(room.metadata or '{}')
-                                    payload['video_signed_url'] = md.get('video_signed_url') or md.get('videoUrl')
-                                    payload['audio_signed_url'] = md.get('audio_signed_url') or md.get('audioUrl')
-                                except Exception:
-                                    pass
-
-                        except Exception:
-                            pass
-
-                        try:
-                            async with aiohttp.ClientSession() as session_http:
-                                headers = {'Content-Type': 'application/json', 'x-agent-secret': upsert_secret}
-                                async with session_http.post(upsert_url, json=payload, headers=headers, timeout=20) as resp:
-                                    if resp.status >= 400:
-                                        text = await resp.text()
-                                        logger.warning(f"Agent upsert failed: {resp.status} {text}")
-                                    else:
-                                        logger.info("Agent results upserted successfully")
-                        except Exception as e:
-                            logger.warning(f"Exception posting upsert results: {e}")
-
-                    # fire-and-forget - don't block closing the session for long
-                    try:
-                        asyncio.create_task(_post_results())
-                    except Exception:
-                        # fallback to awaiting if create_task fails
-                        await _post_results()
-                else:
-                    logger.debug('AGENT_UPSERT_URL or AGENT_UPSERT_SECRET not configured; skipping results upsert')
+                    interview_id = getattr(ctx, 'interview_id', None)
+                    
+                    payload = {
+                        'interviewId': interview_id,
+                        'analysis': results,
+                        'ai_feedback': f"Interview Complete: {passed_questions}/{len(ctx.questions)} passed, {ctx.filler_words_count} filler words",
+                        'internal_metrics': {
+                            'filler_words_total': ctx.filler_words_count,
+                            'total_attempts': total_attempts,
+                            'passed_questions': passed_questions,
+                        },
+                        'transcript': ctx.conversation_history,
+                    }
+                    
+                    async with aiohttp.ClientSession() as session_http:
+                        headers = {'Content-Type': 'application/json', 'x-agent-secret': upsert_secret}
+                        async with session_http.post(upsert_url, json=payload, headers=headers, timeout=20) as resp:
+                            if resp.status >= 400:
+                                text = await resp.text()
+                                logger.warning(f"Agent upsert failed: {resp.status} {text}")
+                            else:
+                                logger.info("✅ Agent results upserted successfully")
             except Exception as e:
-                logger.warning(f"Failed to initiate results upsert: {e}")
-
+                logger.warning(f"Exception posting upsert results: {e}")
+            
             await asyncio.sleep(1)
             await self.session.end()
             
@@ -638,23 +521,60 @@ async def entrypoint(ctx: JobContext):
     participant = await ctx.wait_for_participant()
     logger.info(f"👤 Participant: {participant.identity}")
 
-    # Parse config from room metadata
-    room_metadata = json.loads(ctx.room.metadata or '{}')
+    # Parse config from room metadata OR data channel
+    room_metadata = {}
+    try:
+        room_metadata = json.loads(ctx.room.metadata or '{}')
+    except:
+        pass
+    
+    # Wait briefly for config message on data channel
+    config_received = False
+    config_data = {}
+    
+    def handle_data(data_packet):
+        nonlocal config_received, config_data
+        try:
+            text = data_packet.data.decode('utf-8')
+            msg = json.loads(text)
+            if msg.get('type') == 'agent.instruction':
+                config_data.update(msg)
+                config_received = True
+                logger.info(f"📨 Received config: {msg}")
+        except Exception as e:
+            logger.debug(f"Data parse attempt: {e}")
+    
+    # Subscribe to data
+    ctx.room.on('data_received', handle_data)
+    
+    # Wait up to 3 seconds for config
+    for _ in range(30):
+        if config_received:
+            break
+        await asyncio.sleep(0.1)
+    
+    # Merge config from both sources
+    final_config = {**room_metadata, **config_data}
     
     config = InterviewConfig(
-        interview_type=InterviewType(room_metadata.get('interview_type', 'general')),
-        num_questions=int(room_metadata.get('num_questions', 5)),
-        company_name=room_metadata.get('company_name', 'Our Company'),
-        job_title=room_metadata.get('job_title', 'Software Developer'),
-        max_attempts_per_question=int(room_metadata.get('max_attempts', 3)),
-        max_followups_per_question=int(room_metadata.get('max_followups', 2)),
+        interview_type=InterviewType(final_config.get('topic', 'general').lower()),
+        num_questions=int(final_config.get('num_questions', 5)),
+        company_name=final_config.get('company_name', 'Our Company'),
+        job_title=final_config.get('topic', 'Software Developer'),
+        max_attempts_per_question=int(final_config.get('max_attempts', 3)),
     )
     
     interview_ctx = InterviewContext(
-        candidate_name=participant.identity or 'Candidate',
+        candidate_name=final_config.get('name', participant.identity or 'Candidate'),
         config=config,
         questions=get_questions(config)
     )
+    
+    # Store interview_id if provided
+    if final_config.get('interviewId'):
+        interview_ctx.interview_id = final_config['interviewId']
+    
+    logger.info(f"🎯 Config: {config.num_questions} questions, {config.max_attempts_per_question} attempts, topic={config.interview_type.value}")
 
     # Setup voice pipeline
     llm = openai.LLM(
