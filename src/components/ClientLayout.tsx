@@ -16,6 +16,24 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
     }
   }, []);
 
+  // Ensure mobile slide-over doesn't remain open on larger screens.
+  React.useEffect(() => {
+    const check = () => {
+      try {
+        if (window.innerWidth >= 768 && mobileOpen) {
+          setMobileOpen(false);
+        }
+      } catch {
+        // ignore
+      }
+    };
+
+    // Run on mount and on resize
+    check();
+    window.addEventListener('resize', check);
+    return () => window.removeEventListener('resize', check);
+  }, [mobileOpen]);
+
   React.useEffect(() => {
     try {
       window.localStorage.setItem("sidebarOpen", mobileOpen ? "true" : "false");
@@ -84,9 +102,9 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
 
       {/* Mobile slide-over */}
       {mobileOpen && (
-        <div className="fixed inset-0 z-50 md:hidden">
-          <div className="absolute inset-0 bg-surface/30" onClick={() => setMobileOpen(false)} />
-          <div className="absolute left-0 top-0 bottom-0 w-72 bg-surface-2 p-4 shadow-lg overflow-auto border-r border-surface-2">
+        <div className="fixed inset-0 z-50 md:hidden pointer-events-none">
+          <div className="absolute inset-0 bg-surface/30 pointer-events-auto" onClick={() => setMobileOpen(false)} />
+          <div className="absolute left-0 top-0 bottom-0 w-72 bg-surface-2 p-4 shadow-lg overflow-auto border-r border-surface-2 pointer-events-auto">
             <div className="flex items-center justify-between mb-4">
               <div className="text-lg font-bold">InterviewAI</div>
               <button onClick={() => setMobileOpen(false)} aria-label="Close menu" className="p-2 rounded-md">

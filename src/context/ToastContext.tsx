@@ -32,8 +32,8 @@ export const ToastProvider = ({ children }: { children: React.ReactNode }) => {
   return (
     <ToastContext.Provider value={{ addToast, removeToast }}>
       {children}
-      {/* Global toast container */}
-      <div aria-live="polite" className="fixed inset-0 pointer-events-none z-50">
+      {/* Global toast container (bottom-right, non-blocking) */}
+      <div aria-live="polite" className="fixed bottom-6 right-6 pointer-events-none z-50">
         <div className="flex flex-col items-end p-4 space-y-2">
           {toasts.map((t) => (
             <div key={t.id} className="pointer-events-auto">

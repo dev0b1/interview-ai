@@ -812,9 +812,9 @@ export default function InterviewPage() {
         )}
 
         {showEndConfirm && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center">
-            <div className="absolute inset-0 bg-surface/60" onClick={() => setShowEndConfirm(false)} />
-            <div className="bg-surface-2 rounded-xl shadow-2xl p-6 z-10 w-full max-w-md border border-surface-2">
+          <div className="fixed inset-0 z-50 pointer-events-none flex items-center justify-center">
+            <div className="absolute inset-0 bg-surface/60 pointer-events-auto" onClick={() => setShowEndConfirm(false)} />
+            <div className="bg-surface-2 rounded-xl shadow-2xl p-6 z-10 w-full max-w-md border border-surface-2 pointer-events-auto">
               <h3 className="text-lg font-semibold mb-2 text-foreground">End interview?</h3>
               <p className="text-sm muted mb-6">
                 Are you sure you want to end the interview? This will disconnect you from the room.
