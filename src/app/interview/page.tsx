@@ -105,6 +105,7 @@ function useAgentMessages() {
   const [fillerWords, setFillerWords] = React.useState(0);
   const [latestRoast, setLatestRoast] = React.useState<string | null>(null);
   const [roastMessages, setRoastMessages] = React.useState<string[]>([]);
+  const [isAnswering, setIsAnswering] = React.useState(false);
 
   const room = useRoomContext();
 
@@ -133,6 +134,16 @@ function useAgentMessages() {
             const msg = String(data.ai_feedback);
             setLatestRoast(msg);
             setRoastMessages((r) => [msg, ...r].slice(0, 5));
+          }
+          // Answering / timeout signals from the agent
+          if (data.timeout_occurred !== undefined) {
+            setIsAnswering(false);
+          }
+
+          if (data.current_attempt !== undefined) {
+            const notMaxed = (data.max_attempts === undefined) ? true : (data.current_attempt < data.max_attempts);
+            const notEnded = !Boolean(data.interview_ended);
+            setIsAnswering(Boolean(notMaxed && notEnded));
           }
         }
 
@@ -178,7 +189,8 @@ function useAgentMessages() {
     currentQuestion, 
     fillerWords, 
     latestRoast, 
-    roastMessages 
+    roastMessages,
+    isAnswering,
   };
 }
 
@@ -348,6 +360,7 @@ function QuestionProgress({ current, total }: { current: number; total: number }
   );
 }
 
+
 function InterviewRoomContent({
   name,
   topic,
@@ -367,7 +380,7 @@ function InterviewRoomContent({
     fillerWords, 
     latestRoast, 
     roastMessages 
-  } = useAgentMessages();
+  , isAnswering } = useAgentMessages();
   
   const room = useRoomContext();
   const remotes = useRemoteParticipants();
@@ -424,6 +437,7 @@ function InterviewRoomContent({
               <span className="text-lg">⏱️</span>
               <span className="text-sm font-mono font-bold text-foreground">{formattedTime}</span>
             </div>
+            <AnswerTimer isActive={isAnswering} maxSeconds={90} />
           </div>
           
           <QuestionProgress current={currentQuestion} total={TOTAL_QUESTIONS} />
@@ -845,6 +859,71 @@ export default function InterviewPage() {
           </div>
         )}
       </motion.div>
+    </div>
+  );
+}
+
+// NEW: Answer Timer Component - Add this entire block
+function AnswerTimer({ 
+  isActive, 
+  maxSeconds = 90 
+}: { 
+  isActive: boolean; 
+  maxSeconds?: number;
+}) {
+  const [secondsLeft, setSecondsLeft] = React.useState(maxSeconds);
+  
+  React.useEffect(() => {
+    if (!isActive) {
+      setSecondsLeft(maxSeconds);
+      return;
+    }
+    
+    setSecondsLeft(maxSeconds);
+    
+    const interval = setInterval(() => {
+      setSecondsLeft(s => {
+        if (s <= 1) {
+          clearInterval(interval);
+          return 0;
+        }
+        return s - 1;
+      });
+    }, 1000);
+    
+    return () => clearInterval(interval);
+  }, [isActive, maxSeconds]);
+  
+  if (!isActive) return null;
+  
+  const percentage = (secondsLeft / maxSeconds) * 100;
+  const isLow = secondsLeft <= 20;
+  const isCritical = secondsLeft <= 10;
+  
+  return (
+    <div className={`bg-surface/50 rounded-lg px-4 py-2 border-2 ${
+      isCritical ? 'border-danger animate-pulse' : isLow ? 'border-warning' : 'border-accent/20'
+    }`}>
+      <div className="flex items-center gap-3">
+        <div className="text-xs font-semibold text-foreground/70">Answer Time</div>
+        <div className="flex items-center gap-2">
+          <div className={`text-2xl font-mono font-bold ${
+            isCritical ? 'text-danger' : isLow ? 'text-warning' : 'text-accent'
+          }`}>
+            {secondsLeft}s
+          </div>
+        </div>
+        <div className="flex-1 bg-surface-2 rounded-full h-2 overflow-hidden min-w-[80px]">
+          <motion.div 
+            className={`h-full ${
+              isCritical ? 'bg-danger' : isLow ? 'bg-warning' : 'bg-accent'
+            }`}
+            initial={{ width: '100%' }}
+            animate={{ width: `${percentage}%` }}
+            transition={{ duration: 0.5 }}
+          />
+        </div>
+      </div>
     </div>
   );
 }
