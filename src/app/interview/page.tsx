@@ -360,6 +360,69 @@ function QuestionProgress({ current, total }: { current: number; total: number }
   );
 }
 
+function AnswerTimer({ 
+  isActive, 
+  maxSeconds = 90 
+}: { 
+  isActive: boolean; 
+  maxSeconds?: number;
+}) {
+  const [secondsLeft, setSecondsLeft] = React.useState(maxSeconds);
+  
+  React.useEffect(() => {
+    if (!isActive) {
+      setSecondsLeft(maxSeconds);
+      return;
+    }
+    
+    setSecondsLeft(maxSeconds);
+    
+    const interval = setInterval(() => {
+      setSecondsLeft(s => {
+        if (s <= 1) {
+          clearInterval(interval);
+          return 0;
+        }
+        return s - 1;
+      });
+    }, 1000);
+    
+    return () => clearInterval(interval);
+  }, [isActive, maxSeconds]);
+  
+  if (!isActive) return null;
+  
+  const percentage = (secondsLeft / maxSeconds) * 100;
+  const isLow = secondsLeft <= 20;
+  const isCritical = secondsLeft <= 10;
+  
+  return (
+    <div className={`bg-surface/50 rounded-lg px-4 py-2 border-2 ${
+      isCritical ? 'border-danger animate-pulse' : isLow ? 'border-warning' : 'border-accent/20'
+    }`}>
+      <div className="flex items-center gap-3">
+        <div className="text-xs font-semibold text-foreground/70">Answer Time</div>
+        <div className="flex items-center gap-2">
+          <div className={`text-2xl font-mono font-bold ${
+            isCritical ? 'text-danger' : isLow ? 'text-warning' : 'text-accent'
+          }`}>
+            {secondsLeft}s
+          </div>
+        </div>
+        <div className="flex-1 bg-surface-2 rounded-full h-2 overflow-hidden min-w-[80px]">
+          <motion.div 
+            className={`h-full ${
+              isCritical ? 'bg-danger' : isLow ? 'bg-warning' : 'bg-accent'
+            }`}
+            initial={{ width: '100%' }}
+            animate={{ width: `${percentage}%` }}
+            transition={{ duration: 0.5 }}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function InterviewRoomContent({
   name,
@@ -379,8 +442,9 @@ function InterviewRoomContent({
     currentQuestion, 
     fillerWords, 
     latestRoast, 
-    roastMessages 
-  , isAnswering } = useAgentMessages();
+    roastMessages,
+    isAnswering 
+  } = useAgentMessages();
   
   const room = useRoomContext();
   const remotes = useRemoteParticipants();
@@ -447,7 +511,9 @@ function InterviewRoomContent({
       {/* Main Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Center: AI Avatar + Audio Viz */}
-        <div className="lg:col-span-2 bg-surface/50 rounded-xl p-6 border-2 border-accent/30 flex flex-col items-center justify-center min-h-[400px]">
+        <div className={`lg:col-span-2 bg-surface/50 rounded-xl border-2 border-accent/30 flex flex-col items-center justify-center ${
+          isInterviewStarted ? 'p-6 min-h-[400px]' : 'p-4 min-h-[250px]'
+        }`}>
           {/* AI Avatar */}
           <div className="relative mb-4">
             <div className="w-40 h-40 rounded-full bg-gradient-to-br from-accent via-accent-2 to-accent-2 flex items-center justify-center shadow-xl">
@@ -575,19 +641,19 @@ function InterviewRoomContent({
             </div>
           </div>
         ) : (
-          <div className="bg-gradient-to-br from-accent/20 via-accent-2/20 to-accent/20 border-2 border-accent/30 rounded-xl p-6 flex flex-col items-center justify-center">
-            <div className="text-center space-y-3">
+          <div className="bg-gradient-to-br from-accent/20 via-accent-2/20 to-accent/20 border-2 border-accent/30 rounded-xl p-4 flex flex-col items-center justify-center">
+            <div className="text-center space-y-2">
               <div className="flex items-center justify-center gap-2">
-                <span className="text-3xl">🔥</span>
+                <span className="text-2xl">🔥</span>
                 <div>
-                  <p className="text-foreground font-bold text-2xl">
+                  <p className="text-foreground font-bold text-xl">
                     {userCount.toLocaleString()}+
                   </p>
                   <p className="text-foreground/80 text-xs font-medium">
                     Getting Roasted Today
                   </p>
                 </div>
-                <span className="text-3xl">🔥</span>
+                <span className="text-2xl">🔥</span>
               </div>
               <div className="h-px bg-accent/30 w-full"></div>
               <p className="text-foreground/70 text-xs leading-relaxed">
@@ -782,14 +848,14 @@ export default function InterviewPage() {
         </LiveKitRoom>
 
         {!isInterviewStarted && (
-          <div className="mt-4 bg-surface/50 rounded-xl p-6 border-2 border-accent/20">
-            <label className="block text-sm font-medium text-foreground mb-3">
+          <div className="mt-4 bg-surface/50 rounded-xl p-4 border-2 border-accent/20">
+            <label className="block text-sm font-medium text-foreground mb-2">
               Select Hroast Role
             </label>
             <select
               value={selectedRole}
               onChange={(e) => setSelectedRole(e.target.value)}
-              className="w-full px-4 py-3 bg-surface-2 border-2 border-surface-2 rounded-lg text-foreground focus:ring-2 focus:ring-accent/40 focus:border-accent/50 mb-4"
+              className="w-full px-4 py-2.5 bg-surface-2 border-2 border-surface-2 rounded-lg text-foreground focus:ring-2 focus:ring-accent/40 focus:border-accent/50 mb-3"
             >
               {INTERVIEW_ROLES.map((role) => (
                 <option key={role.id} value={role.id}>
@@ -799,19 +865,19 @@ export default function InterviewPage() {
             </select>
 
             {limits && (
-              <div className="mb-3 text-sm">
+              <div className="mb-2 text-sm">
                 {limits.anonymous ? (
                   <div className="text-foreground/70">Sign in to track Hroast limits.</div>
                 ) : limits.isSubscribed ? (
                   <div className="flex items-center justify-between">
-                    <div className="text-foreground/90">Subscribed — {limits.usedThisMonth ?? 0}/{limits.limit} this month</div>
+                    <div className="text-foreground/90">Subscribed – {limits.usedThisMonth ?? 0}/{limits.limit} this month</div>
                     <div className={`px-2 py-1 rounded text-xs font-medium ${((limits.remaining ?? 0) <= 0) ? 'bg-danger text-foreground' : 'bg-success/10 text-success'}`}>
                       {limits.remaining ?? 0} remaining
                     </div>
                   </div>
                 ) : (
                   <div className="flex items-center justify-between">
-                    <div className="text-foreground/90">Free — {limits.usedTotal ?? 0}/{limits.limit} used</div>
+                    <div className="text-foreground/90">Free – {limits.usedTotal ?? 0}/{limits.limit} used</div>
                     <div className={`px-2 py-1 rounded text-xs font-medium ${((limits.remaining ?? 0) <= 0) ? 'bg-danger text-foreground' : 'bg-accent/10 text-accent'}`}>
                       {limits.remaining ?? 0} remaining
                     </div>
@@ -823,7 +889,7 @@ export default function InterviewPage() {
             <button
               onClick={handleStartInterview}
               disabled={connecting}
-              className="w-full px-6 py-4 bg-accent text-foreground rounded-lg font-semibold text-lg hover:bg-accent-2 transform transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-xl"
+              className="w-full px-6 py-3 bg-accent text-foreground rounded-lg font-semibold text-base hover:bg-accent-2 transform transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-xl"
             >
               {connecting ? 'Connecting…' : '🚀 Start Hroast'}
             </button>
@@ -859,71 +925,6 @@ export default function InterviewPage() {
           </div>
         )}
       </motion.div>
-    </div>
-  );
-}
-
-// NEW: Answer Timer Component - Add this entire block
-function AnswerTimer({ 
-  isActive, 
-  maxSeconds = 90 
-}: { 
-  isActive: boolean; 
-  maxSeconds?: number;
-}) {
-  const [secondsLeft, setSecondsLeft] = React.useState(maxSeconds);
-  
-  React.useEffect(() => {
-    if (!isActive) {
-      setSecondsLeft(maxSeconds);
-      return;
-    }
-    
-    setSecondsLeft(maxSeconds);
-    
-    const interval = setInterval(() => {
-      setSecondsLeft(s => {
-        if (s <= 1) {
-          clearInterval(interval);
-          return 0;
-        }
-        return s - 1;
-      });
-    }, 1000);
-    
-    return () => clearInterval(interval);
-  }, [isActive, maxSeconds]);
-  
-  if (!isActive) return null;
-  
-  const percentage = (secondsLeft / maxSeconds) * 100;
-  const isLow = secondsLeft <= 20;
-  const isCritical = secondsLeft <= 10;
-  
-  return (
-    <div className={`bg-surface/50 rounded-lg px-4 py-2 border-2 ${
-      isCritical ? 'border-danger animate-pulse' : isLow ? 'border-warning' : 'border-accent/20'
-    }`}>
-      <div className="flex items-center gap-3">
-        <div className="text-xs font-semibold text-foreground/70">Answer Time</div>
-        <div className="flex items-center gap-2">
-          <div className={`text-2xl font-mono font-bold ${
-            isCritical ? 'text-danger' : isLow ? 'text-warning' : 'text-accent'
-          }`}>
-            {secondsLeft}s
-          </div>
-        </div>
-        <div className="flex-1 bg-surface-2 rounded-full h-2 overflow-hidden min-w-[80px]">
-          <motion.div 
-            className={`h-full ${
-              isCritical ? 'bg-danger' : isLow ? 'bg-warning' : 'bg-accent'
-            }`}
-            initial={{ width: '100%' }}
-            animate={{ width: `${percentage}%` }}
-            transition={{ duration: 0.5 }}
-          />
-        </div>
-      </div>
     </div>
   );
 }
