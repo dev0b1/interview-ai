@@ -76,7 +76,7 @@ export default function DashboardPage() {
     // fetch credits once on mount
     fetchCredits();
     fetchPro();
-  }, [fetchCredits]);
+  }, [fetchCredits, fetchPro]);
 
   const recent = history.slice(0, 5);
   // simple counts by day (last 7 days)

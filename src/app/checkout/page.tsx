@@ -58,7 +58,7 @@ export default function CheckoutPage() {
     }
 
     router.push('/');
-  }, [paddle, searchParams, router]);
+  }, [paddle, searchParams, router, user?.id, user?.email]);
 
   return (
     <div className="flex items-center justify-center min-h-screen">

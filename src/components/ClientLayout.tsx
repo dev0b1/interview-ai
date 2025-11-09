@@ -87,7 +87,7 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
 
           {/* Top header for main area (md+) */}
           <header className="hidden md:flex items-center justify-between mb-6">
-            <h1 className="text-2xl font-semibold text-foreground">Live Hroast</h1>
+            <h1 className="text-2xl font-semibold text-foreground">Live Interview</h1>
             <div className="text-sm">
               <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-surface-2 text-foreground">
                 <span className="w-2 h-2 bg-danger rounded-full" />
