@@ -131,4 +131,8 @@ async def summarize(entries: List[Entry]):
 
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    # Respect the PORT and HOST environment variables for portability (Render, Docker, etc.)
+    port = int(os.environ.get("PORT", "8000"))
+    host = os.environ.get("HOST", "0.0.0.0")
+    print(f"Starting backend on {host}:{port}")
+    uvicorn.run(app, host=host, port=port)

@@ -326,7 +326,7 @@ function InterviewControls({
         onClick={onEndInterview}
         className="px-4 py-2 bg-surface-2 text-foreground rounded-lg transition font-semibold shadow-lg hover:bg-surface"
       >
-        End Hroast
+        End Interview
       </button>
     </div>
   );
@@ -836,7 +836,7 @@ export default function InterviewPage() {
             <div className="bg-surface-2 rounded-xl shadow-2xl p-6 z-10 w-full max-w-md border border-surface-2 pointer-events-auto">
               <h3 className="text-lg font-semibold mb-2 text-foreground">End interview?</h3>
               <p className="text-sm text-foreground/70 mb-6">
-                Are you sure you want to end the Hroast? This will disconnect you from the room.
+                Are you sure you want to end the interview? This will disconnect you from the room.
               </p>
               <div className="flex gap-3 justify-end">
                 <button
@@ -852,7 +852,7 @@ export default function InterviewPage() {
                   }}
                   className="px-4 py-2 bg-danger text-foreground rounded-lg hover:bg-danger/90"
                 >
-                  End Hroast
+                  End Interview
                 </button>
               </div>
             </div>
