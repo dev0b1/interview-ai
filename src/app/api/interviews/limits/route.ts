@@ -17,8 +17,8 @@ export async function GET(req: NextRequest) {
 
       const userId = ud.user.id;
 
-      const MAX_FREE = Number(process.env.MAX_INTERVIEWS_FREE ?? '3');
-      const MAX_SUB_MONTHLY = Number(process.env.MAX_INTERVIEWS_SUBSCRIBED_MONTHLY ?? '20');
+  const MAX_FREE = Number(process.env.MAX_INTERVIEWS_FREE ?? '3');
+  const MAX_SUB_MONTHLY = Number(process.env.MAX_INTERVIEWS_SUBSCRIBED_MONTHLY ?? '25');
 
       // Check subscription status: prefer `subscriptions` table and verify
       // current_period_end has not passed. Fall back to profiles.pro/pro_expires_at.
@@ -39,7 +39,7 @@ export async function GET(req: NextRequest) {
         }
       }
 
-      if (isSubscribed) {
+  if (isSubscribed) {
         const now = new Date();
         const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
         const { count } = await supabase.from('interviews').select('id', { count: 'exact' }).eq('owner', userId).gte('created_at', startOfMonth);
@@ -48,7 +48,14 @@ export async function GET(req: NextRequest) {
         return NextResponse.json({ anonymous: false, isSubscribed: true, usedThisMonth: used, remaining, limit: MAX_SUB_MONTHLY });
       }
 
-      // Free user: total interviews
+      // Free user: check purchased credits first; if credits present, expose credits as remaining.
+      const { data: profile } = await supabase.from('profiles').select('credits').eq('id', userId).limit(1).maybeSingle();
+      const credits = profile ? Number((profile as any).credits ?? 0) : 0;
+      if (credits > 0) {
+        return NextResponse.json({ anonymous: false, isSubscribed: false, usedTotal: 0, remaining: credits, limit: credits, credits });
+      }
+
+      // Otherwise fall back to free total interviews cap
       const { count } = await supabase.from('interviews').select('id', { count: 'exact' }).eq('owner', userId);
       const used = Number(count ?? 0);
       const remaining = Math.max(0, MAX_FREE - used);

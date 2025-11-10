@@ -52,6 +52,7 @@ export async function GET(request: Request) {
     const MAX_SUB_MONTHLY = Number(process.env.MAX_INTERVIEWS_SUBSCRIBED_MONTHLY ?? '20');
 
     // If we have an authenticated owner, check their subscription and interview counts.
+    let isSubscribed = false;
     if (ownerId) {
       try {
         // Check for active subscription. Prefer subscriptions table, but also
@@ -63,7 +64,8 @@ export async function GET(request: Request) {
           .eq('user_id', ownerId)
           .limit(1);
 
-        let isSubscribed = false;
+  // local assignment to outer-scoped isSubscribed
+  isSubscribed = false;
         if (Array.isArray(subs) && subs.length > 0) {
           const s = subs[0] as any;
           const statusActive = s.status === 'active';
@@ -108,6 +110,38 @@ export async function GET(request: Request) {
         }
       } catch (e) {
         console.warn('Failed to check interview limits; allowing interview by default', e);
+      }
+    }
+
+    // If the user is authenticated and not subscribed, attempt to consume a credit
+    // (purchased credits grant interview capacity). This decrements `profiles.credits`
+    // atomically via a conditional update so we don't go negative.
+    if (ownerId) {
+      try {
+        // Check subscription status again (we already computed isSubscribed above)
+        if (!isSubscribed) {
+          const { data: profile } = await supabase.from('profiles').select('credits').eq('id', ownerId).limit(1).maybeSingle();
+          const currentCredits = profile ? Number((profile as any).credits ?? 0) : 0;
+          if (currentCredits > 0) {
+            // decrement by 1 only if credits > 0
+            const { data: updated, error: updErr } = await supabase
+              .from('profiles')
+              .update({ credits: currentCredits - 1 })
+              .eq('id', ownerId)
+              .gt('credits', 0)
+              .select()
+              .limit(1)
+              .maybeSingle();
+
+            if (updErr) {
+              console.warn('Failed to decrement credits for user', ownerId, updErr);
+            } else if (updated) {
+              console.info(`Consumed 1 credit for user ${ownerId}; remaining=${(updated as any).credits}`);
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('Failed to consume credit at token creation', err);
       }
     }
 

@@ -684,7 +684,7 @@ export default function InterviewPage() {
       await navigator.mediaDevices.getUserMedia({ audio: true });
 
   const { fetchLivekitToken } = await import("../../lib/fetchLivekitToken");
-  const resp = await fetchLivekitToken(userName, "hroast-room");
+  const resp = await fetchLivekitToken(userName, "hroast-room", session?.access_token ?? undefined);
 
       if (!resp?.token) {
         throw new Error("Failed to get token");

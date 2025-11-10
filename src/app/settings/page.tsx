@@ -12,6 +12,7 @@ export default function SettingsPage() {
   const router = useRouter();
   const [dark, setDark] = React.useState(false);
   const [isPro, setIsPro] = React.useState<boolean | null>(null);
+  const [credits, setCredits] = React.useState<number | null>(null);
   const [userId, setUserId] = React.useState<string | undefined>(undefined);
   const [toastMsg, setToastMsg] = React.useState<string | null>(null);
 
@@ -35,8 +36,10 @@ export default function SettingsPage() {
         const expires = (data as any).pro_expires_at;
         const isActive = pro && (!expires || new Date(expires) > new Date());
         setIsPro(isActive);
+        setCredits(Number((data as unknown as ProfileRow).credits ?? 0));
       } else {
         setIsPro(false);
+        setCredits(0);
       }
     } catch {
       setIsPro(false);
@@ -76,10 +79,25 @@ export default function SettingsPage() {
         <h2 className="text-xl font-semibold">Settings</h2>
         <div>
           {isPro === null ? null : isPro ? (
-            <span className="px-2 py-1 text-sm bg-success text-foreground rounded">Pro</span>
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-gradient-to-r from-success/80 to-success text-foreground font-semibold">
+              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 2l2.39 4.85L19 8.18l-3.5 3.41.83 4.84L12 15.77 7.67 16.03l.83-4.84L4.99 8.18l4.61-.?" fill="currentColor"/></svg>
+              <span>Pro</span>
+            </div>
           ) : (
-            <span className="px-2 py-1 text-sm bg-surface-3 text-muted rounded">Free</span>
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-accent/20 bg-surface-3 text-foreground">
+              <svg className="w-4 h-4 text-accent" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 2a5 5 0 100 10 5 5 0 000-10z" fill="currentColor"/></svg>
+              <div className="flex flex-col leading-none">
+                <span className="text-sm font-semibold">Free</span>
+                <span className="text-xs text-foreground/60">Limited access</span>
+              </div>
+            </div>
           )}
+            {credits !== null && (
+              <div className="inline-flex items-center ml-3 px-2 py-1 rounded-full bg-surface-2 text-sm font-medium">
+                <span className="text-foreground/80 mr-2">🎫</span>
+                <span className="text-foreground">{credits} credits</span>
+              </div>
+            )}
         </div>
       </div>
 
