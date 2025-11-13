@@ -824,7 +824,7 @@ async def entrypoint(ctx: JobContext):
         stt=stt,
         llm=llm,
         #tts="elevenlabs/eleven_turbo_v2:pNInz6obpgDQGcFmaJgB",
-        tts=tts
+        tts=tts,
         userdata=interview_ctx,
         min_endpointing_delay=0.5,
         max_endpointing_delay=2.0,
