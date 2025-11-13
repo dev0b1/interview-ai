@@ -23,7 +23,7 @@ from livekit.plugins import silero, openai, deepgram
 load_dotenv()
 
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("hroast-agent")
+logger = logging.getLogger("interview-agent")
 
 
 # ==============================
@@ -42,7 +42,8 @@ class InterviewConfig:
     num_questions: int = 5
     company_name: str = "Our Company"
     job_title: str = "Software Developer"
-    max_attempts_per_question: int = 3
+    max_attempts_per_question: int = 2
+    answer_timeout_seconds: int = 90
 
 
 @dataclass
@@ -53,6 +54,7 @@ class QuestionState:
     passed: bool = False
     responses: List[str] = field(default_factory=list)
     feedback: List[str] = field(default_factory=list)
+    answer_start_time: Optional[float] = None
 
 
 @dataclass
@@ -69,6 +71,8 @@ class InterviewContext:
     interview_ended: bool = False
     waiting_for_user: bool = True
     interview_id: Optional[str] = None
+    answer_timer_task: Optional[asyncio.Task] = None
+    is_answering: bool = False  # Track if user is currently answering
 
 
 # ==============================
@@ -105,10 +109,33 @@ QUESTION_BANK = {
     ],
 }
 
+TIMEOUT_ROASTS = [
+    "TIME'S UP! 90 seconds gone and you couldn't finish? That's embarrassing. Moving on.",
+    "90 SECONDS EXPIRED! Did you fall asleep? Time management matters. Next question.",
+    "TIMEOUT! You wasted all 90 seconds. In a real interview, you'd be shown the door. Moving on.",
+    "TIME'S UP! You had a minute and a half. That's plenty. Next question.",
+    "TIMEOUT! 90 seconds and nothing worth hearing. That's a FAIL. Moving on.",
+]
+
 
 def get_questions(config: InterviewConfig) -> List[str]:
     all_questions = QUESTION_BANK.get(config.interview_type, QUESTION_BANK[InterviewType.GENERAL])
     return all_questions[:config.num_questions]
+
+
+# ==============================
+#   BRUTAL ROAST EXAMPLES
+# ==============================
+BRUTAL_ROASTS = [
+    "I counted {filler_count} filler words. Are you a broken record or just nervous? Stop wasting my time with 'ums' and 'likes'.",
+    "{filler_count} 'ums'? Really? Even a high schooler could do better. Get your thoughts together before you speak.",
+    "That was {word_count} words of absolute nothing. I asked for specifics, not a vague rambling session. Try again.",
+    "I heard {filler_count} filler words and zero substance. This is embarrassing. Be specific or don't bother.",
+    "You just said 'um' {filler_count} times. That's pathetic. I need confidence, not a stuttering mess.",
+    "Your answer was so vague I'm not even sure what you were trying to say. Give me REAL examples with REAL numbers.",
+    "{word_count} words and I still don't know what you actually did. Stop being generic. What did YOU personally accomplish?",
+    "That answer screams 'I'm making this up as I go.' Get specific or get out. Try again.",
+]
 
 
 # ==============================
@@ -216,11 +243,21 @@ def check_answer_quality(text: str, filler_count: int) -> tuple[bool, str, int]:
     return passed, feedback, score
 
 
+def get_brutal_roast(filler_count: int, word_count: int, passed: bool) -> str:
+    """Generate a brutal roast message"""
+    import random
+    
+    if not passed:
+        roast = random.choice(BRUTAL_ROASTS)
+        return roast.format(filler_count=filler_count, word_count=word_count)
+    return ""
+
+
 # ==============================
 #       AGENT CLASS
 # ==============================
 class RoastInterviewAgent(Agent):
-    """Brutally honest AI interview coach - SIMPLIFIED (no follow-ups)"""
+    """Brutally honest AI interview coach with answer timer"""
     
     def __init__(self, interview_ctx: InterviewContext):
         ctx = interview_ctx
@@ -234,29 +271,116 @@ class RoastInterviewAgent(Agent):
         questions_list = "\n".join(f"{i+1}. {q}" for i, q in enumerate(ctx.questions))
         
         system_prompt = (
-            f"You are a brutally honest AI interview coach conducting a {config.interview_type.value} interview "
+            f"You are a BRUTAL, no-nonsense AI interview coach conducting a {config.interview_type.value} interview "
             f"for {config.job_title} at {config.company_name}.\n\n"
-            f"### ROAST MODE RULES:\n"
+            f"### ROAST MODE - BE ABSOLUTELY BRUTAL:\n"
             f"- {config.num_questions} questions total\n"
             f"- Each question: {config.max_attempts_per_question} attempts max\n"
-            f"- Count filler words ALOUD every time\n"
-            f"- Be brutal but constructive\n"
-            f"- After max attempts, move to next question\n\n"
+            f"- {config.answer_timeout_seconds} seconds per answer (auto-fail if timeout)\n"
+            f"- Count filler words LOUDLY and ROAST them for it\n"
+            f"- Call out vague answers HARSHLY - demand specifics with NUMBERS and RESULTS\n"
+            f"- Be BRUTALLY HONEST - this is about improvement through tough feedback\n\n"
             f"### YOUR {len(ctx.questions)} QUESTIONS:\n{questions_list}\n\n"
-            f"### RESPONSE PATTERNS:\n\n"
-            f"**IF ANSWER IS BAD (attempts 1-2):**\n"
-            f"'I counted [X] ums and [Y] likes. That's unacceptable. [Why it's weak]. Be specific. Try again.'\n\n"
-            f"**IF ANSWER IS BAD (attempt 3 - FINAL):**\n"
-            f"'Still weak after 3 tries. Moving on. Next question: [Next question]'\n\n"
-            f"**IF ANSWER IS GOOD:**\n"
-            f"'Solid answer! [Brief praise]. Moving on. Next question: [Next question]'\n\n"
-            f"**AFTER ALL {config.num_questions} QUESTIONS:**\n"
-            f"'Interview complete. Here's my honest assessment: [Brutal feedback on performance, total filler count, hire recommendation Yes/Maybe/No]'\n\n"
-            f"Always be direct. Always count fillers. Always demand specifics."
+            f"### BRUTAL ROASTING STYLE:\n\n"
+            f"**BAD ANSWER (attempt 1):**\n"
+            f"'I counted [X] ums - that's pathetic. Your answer was vague garbage. Where are the SPECIFICS? "
+            f"What NUMBERS can you give me? What did YOU personally achieve? Stop wasting my time. Try again.'\n\n"
+            f"**BAD ANSWER (attempt 2 - FINAL):**\n"
+            f"'STILL terrible after 2 tries. [X] filler words AGAIN. You clearly can't answer this. Moving on. "
+            f"Next question: [Next question]'\n\n"
+            f"**GOOD ANSWER:**\n"
+            f"'Finally! That's what I wanted to hear. Solid specifics. Moving on. Next question: [Next question]'\n\n"
+            f"**TIMEOUT (90 seconds expired):**\n"
+            f"'Time's up! 90 seconds and you couldn't finish? That's a fail. Moving on.'\n\n"
+            f"**AFTER ALL QUESTIONS:**\n"
+            f"'Interview over. Here's the brutal truth: [Total filler count], [Questions passed/failed], "
+            f"[Hire recommendation: Yes/Maybe/No with harsh reasoning]'\n\n"
+            f"BE HARSH. BE DIRECT. BE BRUTAL. No sugar-coating. This is ROAST MODE."
         )
         
         super().__init__(instructions=system_prompt)
         self.interview_ctx = interview_ctx
+
+    async def _start_answer_timer(self, q_state: QuestionState):
+        """🔥 Start countdown timer - USER SEES THIS COUNTING DOWN"""
+        ctx = self.interview_ctx
+        
+        # Cancel existing timer if any
+        if ctx.answer_timer_task:
+            ctx.answer_timer_task.cancel()
+        
+        async def timer_countdown():
+            try:
+                timeout = ctx.config.answer_timeout_seconds
+                q_state.answer_start_time = asyncio.get_event_loop().time()
+                
+                # 🔥 CRITICAL: Set is_answering TRUE so frontend shows timer
+                ctx.is_answering = True
+                await self._publish_question_state(is_answering=True)
+                
+                logger.info(f"⏱️ Timer started: {timeout}s countdown for Q{ctx.current_question_index + 1}")
+                
+                # Wait for timeout
+                await asyncio.sleep(timeout)
+                
+                # ⏰ TIMEOUT REACHED - USER DIDN'T ANSWER IN TIME
+                if ctx.waiting_for_user and not ctx.interview_ended:
+                    logger.warning(f"⏰ TIMEOUT! User didn't answer Q{ctx.current_question_index + 1} in {timeout}s")
+                    
+                    ctx.is_answering = False
+                    ctx.waiting_for_user = False
+                    
+                    # Mark as failed attempt
+                    q_state.attempts += 1
+                    q_state.passed = False
+                    
+                    # Get timeout roast
+                    import random
+                    timeout_roast = random.choice(TIMEOUT_ROASTS)
+                    
+                    logger.info(f"🔥 TIMEOUT ROAST: {timeout_roast}")
+                    
+                    # Store timeout in history
+                    ctx.conversation_history.append({
+                        "role": "user",
+                        "content": "[TIMEOUT - No answer within 90 seconds]",
+                        "timestamp": datetime.now().isoformat(),
+                        "question_index": ctx.current_question_index,
+                        "attempt": q_state.attempts,
+                        "answer_time_seconds": timeout,
+                        "metrics": {
+                            "confidence": 0,
+                            "professionalism": 0,
+                            "filler_count": 0,
+                            "quality_score": 0,
+                            "passed": False,
+                            "timeout": True,
+                        },
+                        "roast": timeout_roast
+                    })
+                    
+                    q_state.feedback.append(f"TIMEOUT ({timeout}s) - Auto-fail | Score: 0/100")
+                    
+                    # Publish timeout metrics
+                    await self._publish_metrics(
+                        confidence=0,
+                        professionalism=0,
+                        filler_count=0,
+                        quality_score=0,
+                        roast_message=timeout_roast,
+                        answer_time=timeout,
+                        timeout_occurred=True
+                    )
+                    
+                    # 🔥 ALWAYS MOVE TO NEXT QUESTION ON TIMEOUT
+                    logger.info(f"➡️ Moving to next question after timeout")
+                    await self._move_to_next_question(timeout=True)
+                    
+            except asyncio.CancelledError:
+                logger.debug("Timer cancelled - user answered in time")
+                pass
+        
+        ctx.answer_timer_task = asyncio.create_task(timer_countdown())
 
     async def on_user_speech_committed(self, message: ChatMessage):
         """Analyze response and handle retry logic"""
@@ -266,7 +390,16 @@ class RoastInterviewAgent(Agent):
         if not text.strip() or ctx.interview_ended or not ctx.waiting_for_user:
             return
         
+        # Cancel timer since user answered
+        if ctx.answer_timer_task:
+            ctx.answer_timer_task.cancel()
+            ctx.answer_timer_task = None
+        
+        ctx.is_answering = False
         ctx.waiting_for_user = False
+        
+        # Signal that user stopped answering
+        await self._publish_question_state(is_answering=False)
         
         # Check if interview should have ended
         if ctx.current_question_index >= len(ctx.question_states):
@@ -275,6 +408,11 @@ class RoastInterviewAgent(Agent):
         
         q_state = ctx.question_states[ctx.current_question_index]
         
+        # Calculate answer time
+        answer_time = 0
+        if q_state.answer_start_time:
+            answer_time = int(asyncio.get_event_loop().time() - q_state.answer_start_time)
+        
         # Analyze
         filler_count, found_fillers = analyze_filler_words(text)
         ctx.filler_words_count += filler_count
@@ -282,10 +420,12 @@ class RoastInterviewAgent(Agent):
         professionalism_score = calculate_professionalism_score(text, filler_count)
         
         # Handle answer
-        await self._handle_answer(q_state, text, filler_count, found_fillers, confidence_score, professionalism_score)
+        await self._handle_answer(q_state, text, filler_count, found_fillers, 
+                                   confidence_score, professionalism_score, answer_time)
 
     async def _handle_answer(self, q_state: QuestionState, text: str, filler_count: int, 
-                            found_fillers: List[str], confidence_score: int, professionalism_score: int):
+                            found_fillers: List[str], confidence_score: int, 
+                            professionalism_score: int, answer_time: int):
         """Handle answer to question"""
         ctx = self.interview_ctx
         
@@ -297,9 +437,14 @@ class RoastInterviewAgent(Agent):
         q_state.passed = passed
         q_state.feedback.append(feedback)
         
+        # Generate brutal roast if failed
+        roast = get_brutal_roast(filler_count, len(text.split()), passed) if not passed else None
+        
         # Log
-        logger.info(f"👤 Q{ctx.current_question_index + 1} Attempt {q_state.attempts}/{ctx.config.max_attempts_per_question}: {text[:80]}...")
-        logger.info(f"📊 Fillers: {', '.join(found_fillers) if found_fillers else '0'} | Quality: {quality_score}/100 | {'✅ PASS' if passed else '❌ FAIL'}")
+        logger.info(f"💬 Q{ctx.current_question_index + 1} Attempt {q_state.attempts}/{ctx.config.max_attempts_per_question}: {text[:80]}...")
+        logger.info(f"📊 Fillers: {', '.join(found_fillers) if found_fillers else '0'} | Quality: {quality_score}/100 | Time: {answer_time}s | {'✅ PASS' if passed else '❌ FAIL'}")
+        if roast:
+            logger.info(f"🔥 ROAST: {roast}")
         
         # Store
         ctx.responses.append(text)
@@ -309,17 +454,20 @@ class RoastInterviewAgent(Agent):
             "timestamp": datetime.now().isoformat(),
             "question_index": ctx.current_question_index,
             "attempt": q_state.attempts,
+            "answer_time_seconds": answer_time,
             "metrics": {
                 "confidence": confidence_score,
                 "professionalism": professionalism_score,
                 "filler_count": filler_count,
                 "quality_score": quality_score,
                 "passed": passed,
-            }
+            },
+            "roast": roast
         })
         
-        # Publish metrics
-        await self._publish_metrics(confidence_score, professionalism_score, filler_count, quality_score)
+        # Publish metrics with roast
+        await self._publish_metrics(confidence_score, professionalism_score, filler_count, 
+                                     quality_score, roast_message=roast, answer_time=answer_time)
         
         # Decide next action
         if passed or q_state.attempts >= ctx.config.max_attempts_per_question:
@@ -330,26 +478,44 @@ class RoastInterviewAgent(Agent):
                 logger.info(f"❌ Max attempts ({ctx.config.max_attempts_per_question}) reached - moving to next question")
             await self._move_to_next_question()
         else:
-            # Allow retry
+            # Allow retry and restart timer
             remaining = ctx.config.max_attempts_per_question - q_state.attempts
             logger.info(f"🔄 Retry allowed - {remaining} attempt(s) remaining")
             ctx.waiting_for_user = True
+            # Timer will restart after agent asks to retry
 
-    async def _move_to_next_question(self):
-        """Move to next question or end interview"""
+    async def _move_to_next_question(self, timeout: bool = False):
+        """🔥 Move to next question - THIS MUST UPDATE QUESTION COUNTER"""
         ctx = self.interview_ctx
         
+        # Cancel any existing timer
+        if ctx.answer_timer_task:
+            ctx.answer_timer_task.cancel()
+            ctx.answer_timer_task = None
+        
+        ctx.is_answering = False
+        
+        # 🔥 CRITICAL: INCREMENT BEFORE PUBLISHING
         ctx.current_question_index += 1
+        
+        logger.info(f"📍 Question index now: {ctx.current_question_index + 1}/{len(ctx.questions)}")
         
         if ctx.current_question_index >= len(ctx.questions):
             logger.info("🎯 All questions complete - ending interview")
             ctx.interview_ended = True
+            await self._publish_question_state(is_answering=False)
         else:
             logger.info(f"➡️ Moving to question {ctx.current_question_index + 1}/{len(ctx.questions)}")
             ctx.waiting_for_user = True
+            
+            # 🔥 CRITICAL: PUBLISH NEW QUESTION NUMBER IMMEDIATELY
+            await self._publish_question_state(is_answering=False)
+            
+            # Small delay to ensure state propagates
+            await asyncio.sleep(0.1)
 
     async def on_agent_speech_committed(self, message: ChatMessage):
-        """Track agent responses"""
+        """Track agent responses and start timer after asking question"""
         ctx = self.interview_ctx
         text = message.content
         
@@ -361,6 +527,14 @@ class RoastInterviewAgent(Agent):
         })
         
         logger.info(f"🤖 AGENT: {text[:100]}...")
+        
+        # 🔥 START TIMER AFTER AGENT FINISHES ASKING QUESTION
+        if ctx.waiting_for_user and not ctx.interview_ended and ctx.current_question_index < len(ctx.question_states):
+            q_state = ctx.question_states[ctx.current_question_index]
+            # Start timer for this question
+            logger.info(f"🎬 Agent finished asking Q{ctx.current_question_index + 1} - starting timer")
+            await asyncio.sleep(0.5)  # Brief delay after agent speaks
+            await self._start_answer_timer(q_state)
         
         # Check if interview should end
         if ctx.interview_ended:
@@ -374,17 +548,58 @@ class RoastInterviewAgent(Agent):
         
         greeting = (
             f"Hello {ctx.candidate_name}! Welcome to your {ctx.config.interview_type.value} interview "
-            f"for {ctx.config.job_title} at {ctx.config.company_name}. "
-            f"I'm in ROAST MODE. Here's how this works: I have {ctx.config.num_questions} questions. "
-            f"You get up to {ctx.config.max_attempts_per_question} tries per question. "
-            f"I'll count every filler word and call out vague answers. "
-            f"Ready? Question 1: {ctx.questions[0]}"
+            f"for {ctx.config.job_title}. "
+            f"I'm in BRUTAL ROAST MODE. Here's how this works: I have {ctx.config.num_questions} questions. "
+            f"You get {ctx.config.max_attempts_per_question} attempts per question and {ctx.config.answer_timeout_seconds} seconds to answer. "
+            f"I will COUNT every filler word and ROAST you for vague answers. "
+            f"This is tough love - let's begin. Question 1: {ctx.questions[0]}"
         )
         
-        logger.info(f"🔥 Starting ROAST MODE - {len(ctx.questions)} questions, {ctx.config.max_attempts_per_question} attempts each")
+        logger.info(f"🔥 Starting BRUTAL ROAST MODE - {len(ctx.questions)} questions, {ctx.config.max_attempts_per_question} attempts, {ctx.config.answer_timeout_seconds}s timeout")
+        
+        # Publish initial state
+        await self._publish_question_state(is_answering=False)
+        
         await self.session.say(greeting, allow_interruptions=True)
 
-    async def _publish_metrics(self, confidence: int, professionalism: int, filler_count: int, quality_score: int):
+    async def _publish_question_state(self, is_answering: bool):
+        """🔥 CRITICAL: Publish question state to frontend"""
+        try:
+            room = self.session.room if hasattr(self.session, 'room') else None
+            if not room or not hasattr(room, 'local_participant'):
+                return
+            
+            ctx = self.interview_ctx
+            current_q = ctx.question_states[ctx.current_question_index] if ctx.current_question_index < len(ctx.question_states) else None
+            
+            payload = {
+                "type": "question_state",
+                "question_number": ctx.current_question_index + 1,
+                "total_questions": len(ctx.questions),
+                "current_attempt": current_q.attempts if current_q else 0,
+                "max_attempts": ctx.config.max_attempts_per_question,
+                "is_answering": is_answering,
+                "waiting_for_user": ctx.waiting_for_user,
+                "interview_ended": ctx.interview_ended,
+                "timestamp": datetime.now().isoformat(),
+            }
+            
+            data = json.dumps(payload).encode('utf-8')
+            
+            await room.local_participant.publish_data(
+                data,
+                kind=rtc.DataPacketKind.KIND_RELIABLE,
+                topic="question-state"
+            )
+            
+            logger.info(f"📍 Published state: Q{payload['question_number']}/{payload['total_questions']}, answering={is_answering}")
+            
+        except Exception as e:
+            logger.warning(f"Failed to publish question state: {e}")
+
+    async def _publish_metrics(self, confidence: int, professionalism: int, filler_count: int, 
+                               quality_score: int, roast_message: Optional[str] = None,
+                               answer_time: int = 0, timeout_occurred: bool = False):
         """Send live metrics to frontend"""
         try:
             room = self.session.room if hasattr(self.session, 'room') else None
@@ -407,12 +622,15 @@ class RoastInterviewAgent(Agent):
                 "filler_count_total": ctx.filler_words_count,
                 "interview_ended": ctx.interview_ended,
                 "timestamp": datetime.now().isoformat(),
+                "answer_time_seconds": answer_time,
+                "timeout_occurred": timeout_occurred,
             }
             
-            # Encode as JSON string then to bytes
+            if roast_message:
+                payload["ai_feedback"] = roast_message
+            
             data = json.dumps(payload).encode('utf-8')
             
-            # Publish to data channel
             await room.local_participant.publish_data(
                 data,
                 kind=rtc.DataPacketKind.KIND_RELIABLE,
@@ -428,6 +646,11 @@ class RoastInterviewAgent(Agent):
         """Save results"""
         try:
             ctx = self.interview_ctx
+            
+            # Cancel any remaining timer
+            if ctx.answer_timer_task:
+                ctx.answer_timer_task.cancel()
+            
             duration = (datetime.now() - ctx.start_time).total_seconds() / 60
             
             # Calculate stats
@@ -561,7 +784,8 @@ async def entrypoint(ctx: JobContext):
         num_questions=int(final_config.get('num_questions', 5)),
         company_name=final_config.get('company_name', 'Our Company'),
         job_title=final_config.get('topic', 'Software Developer'),
-        max_attempts_per_question=int(final_config.get('max_attempts', 3)),
+        max_attempts_per_question=2,
+        answer_timeout_seconds=90,
     )
     
     interview_ctx = InterviewContext(
@@ -574,7 +798,7 @@ async def entrypoint(ctx: JobContext):
     if final_config.get('interviewId'):
         interview_ctx.interview_id = final_config['interviewId']
     
-    logger.info(f"🎯 Config: {config.num_questions} questions, {config.max_attempts_per_question} attempts, topic={config.interview_type.value}")
+    logger.info(f"🎯 Config: {config.num_questions} questions, {config.max_attempts_per_question} attempts, {config.answer_timeout_seconds}s timeout, topic={config.interview_type.value}")
 
     # Setup voice pipeline
     llm = openai.LLM(
