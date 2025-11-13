@@ -42,8 +42,8 @@ class InterviewConfig:
     num_questions: int = 5
     company_name: str = "Our Company"
     job_title: str = "Software Developer"
-    max_attempts_per_question: int = 2  # Changed to 2 retries
-    answer_timeout_seconds: int = 90  # 90 seconds per answer
+    max_attempts_per_question: int = 2
+    answer_timeout_seconds: int = 90
 
 
 @dataclass
@@ -305,6 +305,9 @@ class RoastInterviewAgent(Agent):
                 timeout = ctx.config.answer_timeout_seconds
                 q_state.answer_start_time = asyncio.get_event_loop().time()
                 
+                # 🔥 FIX #3: Publish that user is now answering with is_answering=True
+                await self._publish_question_state(is_answering=True)
+                
                 # Wait for timeout
                 await asyncio.sleep(timeout)
                 
@@ -338,6 +341,9 @@ class RoastInterviewAgent(Agent):
             ctx.answer_timer_task = None
         
         ctx.waiting_for_user = False
+        
+        # 🔥 FIX #3: Signal that user stopped answering
+        await self._publish_question_state(is_answering=False)
         
         # Check if interview should have ended
         if ctx.current_question_index >= len(ctx.question_states):
@@ -379,7 +385,7 @@ class RoastInterviewAgent(Agent):
         roast = get_brutal_roast(filler_count, len(text.split()), passed) if not passed else None
         
         # Log
-        logger.info(f"👤 Q{ctx.current_question_index + 1} Attempt {q_state.attempts}/{ctx.config.max_attempts_per_question}: {text[:80]}...")
+        logger.info(f"💬 Q{ctx.current_question_index + 1} Attempt {q_state.attempts}/{ctx.config.max_attempts_per_question}: {text[:80]}...")
         logger.info(f"📊 Fillers: {', '.join(found_fillers) if found_fillers else '0'} | Quality: {quality_score}/100 | Time: {answer_time}s | {'✅ PASS' if passed else '❌ FAIL'}")
         if roast:
             logger.info(f"🔥 ROAST: {roast}")
@@ -431,17 +437,23 @@ class RoastInterviewAgent(Agent):
             ctx.answer_timer_task.cancel()
             ctx.answer_timer_task = None
         
+        # Signal stopped answering
+        await self._publish_question_state(is_answering=False)
+        
         ctx.current_question_index += 1
         
         if ctx.current_question_index >= len(ctx.questions):
             logger.info("🎯 All questions complete - ending interview")
             ctx.interview_ended = True
+            # Publish final state
+            await self._publish_question_state(is_answering=False)
         else:
             logger.info(f"➡️ Moving to question {ctx.current_question_index + 1}/{len(ctx.questions)}")
             ctx.waiting_for_user = True
             
-            # Start timer for new question (will start after agent asks it)
-            # Don't start timer yet - wait for agent to ask question first
+            # 🔥 FIX #1: Publish new question number IMMEDIATELY when moving to next question
+            # This ensures frontend updates the question counter right away
+            await self._publish_question_state(is_answering=False)
 
     async def on_agent_speech_committed(self, message: ChatMessage):
         """Track agent responses and start timer after asking question"""
@@ -457,11 +469,16 @@ class RoastInterviewAgent(Agent):
         
         logger.info(f"🤖 AGENT: {text[:100]}...")
         
+        # Publish updated question state when agent speaks
+        if not ctx.interview_ended and ctx.current_question_index < len(ctx.question_states):
+            await self._publish_question_state(is_answering=False)
+        
         # If agent just asked a question and we're waiting, start timer
         if ctx.waiting_for_user and not ctx.interview_ended and ctx.current_question_index < len(ctx.question_states):
             q_state = ctx.question_states[ctx.current_question_index]
             if q_state.attempts == 0 or (q_state.attempts > 0 and not q_state.passed):
-                # Start answer timer
+                # Start answer timer after a brief delay to let the speech finish
+                await asyncio.sleep(0.5)
                 await self._start_answer_timer(q_state)
         
         # Check if interview should end
@@ -484,7 +501,46 @@ class RoastInterviewAgent(Agent):
         )
         
         logger.info(f"🔥 Starting BRUTAL ROAST MODE - {len(ctx.questions)} questions, {ctx.config.max_attempts_per_question} attempts, {ctx.config.answer_timeout_seconds}s timeout")
+        
+        # Publish initial state
+        await self._publish_question_state(is_answering=False)
+        
         await self.session.say(greeting, allow_interruptions=True)
+
+    async def _publish_question_state(self, is_answering: bool):
+        """🔥 FIX #1 & #3: Publish current question state to frontend"""
+        try:
+            room = self.session.room if hasattr(self.session, 'room') else None
+            if not room or not hasattr(room, 'local_participant'):
+                return
+            
+            ctx = self.interview_ctx
+            current_q = ctx.question_states[ctx.current_question_index] if ctx.current_question_index < len(ctx.question_states) else None
+            
+            payload = {
+                "type": "question_state",
+                "question_number": ctx.current_question_index + 1,
+                "total_questions": len(ctx.questions),
+                "current_attempt": current_q.attempts if current_q else 0,
+                "max_attempts": ctx.config.max_attempts_per_question,
+                "is_answering": is_answering,
+                "waiting_for_user": ctx.waiting_for_user,
+                "interview_ended": ctx.interview_ended,
+                "timestamp": datetime.now().isoformat(),
+            }
+            
+            data = json.dumps(payload).encode('utf-8')
+            
+            await room.local_participant.publish_data(
+                data,
+                kind=rtc.DataPacketKind.KIND_RELIABLE,
+                topic="question-state"
+            )
+            
+            logger.debug(f"📍 Published question state: Q{payload['question_number']}, answering={is_answering}")
+            
+        except Exception as e:
+            logger.warning(f"Failed to publish question state: {e}")
 
     async def _publish_metrics(self, confidence: int, professionalism: int, filler_count: int, 
                                quality_score: int, roast_message: Optional[str] = None,
@@ -515,14 +571,11 @@ class RoastInterviewAgent(Agent):
                 "timeout_occurred": timeout_occurred,
             }
             
-            # Add roast message if present
             if roast_message:
                 payload["ai_feedback"] = roast_message
             
-            # Encode as JSON string then to bytes
             data = json.dumps(payload).encode('utf-8')
             
-            # Publish to data channel
             await room.local_participant.publish_data(
                 data,
                 kind=rtc.DataPacketKind.KIND_RELIABLE,
@@ -676,8 +729,8 @@ async def entrypoint(ctx: JobContext):
         num_questions=int(final_config.get('num_questions', 5)),
         company_name=final_config.get('company_name', 'Our Company'),
         job_title=final_config.get('topic', 'Software Developer'),
-        max_attempts_per_question=2,  # Fixed to 2 retries
-        answer_timeout_seconds=90,  # 90 seconds per answer
+        max_attempts_per_question=2,
+        answer_timeout_seconds=90,
     )
     
     interview_ctx = InterviewContext(

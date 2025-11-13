@@ -1,6 +1,6 @@
 /**
- * Complete Real-time Interview Frontend - Simplified (No Follow-ups)
- * With Timer and Question Counter
+ * Complete Real-time Interview Frontend - Fixed Version
+ * Fixes: Question counter, audio visualizer, answer timer
  */
 
 "use client";
@@ -122,9 +122,23 @@ function useAgentMessages() {
         const text = new TextDecoder().decode(payload);
         const data = JSON.parse(text);
 
+        console.log('📨 Received data:', { type: data.type, topic, data });
+
+        // Handle question state updates (NEW - this fixes the counter)
+        if (topic === 'question-state' || data.type === 'question_state') {
+          console.log('📍 Question state update:', data);
+          if (data.question_number !== undefined) {
+            setCurrentQuestion(data.question_number);
+          }
+          if (data.is_answering !== undefined) {
+            setIsAnswering(data.is_answering);
+          }
+        }
+
         // Handle live metrics
         if (topic === 'live-metrics' || data.type === 'live_metrics') {
-          if (data.question_number) {
+          console.log('📊 Metrics update:', data);
+          if (data.question_number !== undefined) {
             setCurrentQuestion(data.question_number);
           }
           if (data.filler_count_total !== undefined) {
@@ -135,19 +149,12 @@ function useAgentMessages() {
             setLatestRoast(msg);
             setRoastMessages((r) => [msg, ...r].slice(0, 5));
           }
-          // Answering / timeout signals from the agent
-          if (data.timeout_occurred !== undefined) {
+          if (data.timeout_occurred !== undefined && data.timeout_occurred) {
             setIsAnswering(false);
-          }
-
-          if (data.current_attempt !== undefined) {
-            const notMaxed = (data.max_attempts === undefined) ? true : (data.current_attempt < data.max_attempts);
-            const notEnded = !Boolean(data.interview_ended);
-            setIsAnswering(Boolean(notMaxed && notEnded));
           }
         }
 
-  // Handle Hroast complete
+        // Handle interview complete
         if (data.type === 'interview_complete' || data.type === 'agent.interview_complete') {
           const results = data.results || data;
           const scoreObj = results.score;
@@ -232,7 +239,7 @@ function InterviewConfigPublisher({
         localParticipant.publishData(data, { reliable: true });
 
         setPublished(true);
-  console.log("✅ Published Hroast config to agent");
+        console.log("✅ Published Hroast config to agent");
       } catch (err) {
         console.error("Failed to publish config:", err);
       }
@@ -273,7 +280,7 @@ function InterviewControls({
         headers: { 'Content-Type': 'application/json' } 
       });
       const json = await res.json();
-      if (!res.ok) throw new Error(json?.error || 'failed to start egress');
+      if (!res.ok) throw new Error(json?.error || 'failed to start egress recording');
       const id = json?.result?.egressId || json?.result?.id || json?.result?.egress?.id || null;
       setEgressId(id);
       setIsRecording(true);
@@ -346,9 +353,9 @@ function QuestionProgress({ current, total }: { current: number; total: number }
             <div
               key={i}
               className={`w-2 h-2 rounded-full transition-colors ${
-                i < current 
+                i < current - 1
                   ? 'bg-success' 
-                  : i === current 
+                  : i === current - 1
                   ? 'bg-accent animate-pulse' 
                   : 'bg-surface-2'
               }`}
@@ -360,6 +367,69 @@ function QuestionProgress({ current, total }: { current: number; total: number }
   );
 }
 
+function AnswerTimer({ 
+  isActive, 
+  maxSeconds = 90 
+}: { 
+  isActive: boolean; 
+  maxSeconds?: number;
+}) {
+  const [secondsLeft, setSecondsLeft] = React.useState(maxSeconds);
+  
+  React.useEffect(() => {
+    if (!isActive) {
+      setSecondsLeft(maxSeconds);
+      return;
+    }
+    
+    setSecondsLeft(maxSeconds);
+    
+    const interval = setInterval(() => {
+      setSecondsLeft(s => {
+        if (s <= 1) {
+          clearInterval(interval);
+          return 0;
+        }
+        return s - 1;
+      });
+    }, 1000);
+    
+    return () => clearInterval(interval);
+  }, [isActive, maxSeconds]);
+  
+  if (!isActive) return null;
+  
+  const percentage = (secondsLeft / maxSeconds) * 100;
+  const isLow = secondsLeft <= 20;
+  const isCritical = secondsLeft <= 10;
+  
+  return (
+    <div className={`bg-surface/50 rounded-lg px-4 py-2 border-2 ${
+      isCritical ? 'border-danger animate-pulse' : isLow ? 'border-warning' : 'border-accent/20'
+    }`}>
+      <div className="flex items-center gap-3">
+        <div className="text-xs font-semibold text-foreground/70">Answer Time</div>
+        <div className="flex items-center gap-2">
+          <div className={`text-2xl font-mono font-bold ${
+            isCritical ? 'text-danger' : isLow ? 'text-warning' : 'text-accent'
+          }`}>
+            {secondsLeft}s
+          </div>
+        </div>
+        <div className="flex-1 bg-surface-2 rounded-full h-2 overflow-hidden min-w-[80px]">
+          <motion.div 
+            className={`h-full ${
+              isCritical ? 'bg-danger' : isLow ? 'bg-warning' : 'bg-accent'
+            }`}
+            initial={{ width: '100%' }}
+            animate={{ width: `${percentage}%` }}
+            transition={{ duration: 0.5 }}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function InterviewRoomContent({
   name,
@@ -379,8 +449,9 @@ function InterviewRoomContent({
     currentQuestion, 
     fillerWords, 
     latestRoast, 
-    roastMessages 
-  , isAnswering } = useAgentMessages();
+    roastMessages,
+    isAnswering 
+  } = useAgentMessages();
   
   const room = useRoomContext();
   const remotes = useRemoteParticipants();
@@ -389,12 +460,15 @@ function InterviewRoomContent({
   
   const [userCount] = React.useState(() => Math.floor(Math.random() * 3001) + 2000);
   
-  const remoteTracks = useTracks([Track.Source.Microphone], {
-    onlySubscribed: true,
-  });
-  const agentAudioTrack = remoteTracks.find(
-    (trackRef) => trackRef.participant.identity !== localParticipant?.identity
-  );
+  // FIXED: Better track detection for audio visualizer
+  const agentParticipant = remotes.find(p => p.identity !== localParticipant?.identity);
+  const agentAudioTracks = useTracks(
+     [{ source: Track.Source.Microphone, withPlaceholder: false }],
+     { onlySubscribed: true }
+   );
+   const agentAudioTrack = agentAudioTracks.find(
+     track => track.participant.identity !== localParticipant?.identity
+   );
   
   const [showSummary, setShowSummary] = React.useState(false);
 
@@ -406,6 +480,13 @@ function InterviewRoomContent({
       setShowSummary(true);
     }
   }, [summary, isInterviewStarted]);
+
+  // Debug logging
+  React.useEffect(() => {
+    console.log('🎯 Current Question:', currentQuestion);
+    console.log('⏱️ Is Answering:', isAnswering);
+    console.log('🎤 Agent Track:', agentAudioTrack ? 'Present' : 'Missing');
+  }, [currentQuestion, isAnswering, agentAudioTrack]);
 
   return (
     <>
@@ -445,9 +526,9 @@ function InterviewRoomContent({
       )}
 
       {/* Main Grid */}
-  <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
         {/* Center: AI Avatar + Audio Viz */}
-  <div className="lg:col-span-2 bg-surface/50 rounded-xl p-4 border-2 border-accent/30 flex flex-col items-center justify-center min-h-[220px]">
+        <div className="lg:col-span-2 bg-surface/50 rounded-xl p-4 border-2 border-accent/30 flex flex-col items-center justify-center min-h-[220px]">
           {/* AI Avatar */}
           <div className="relative mb-4">
             <div className="w-28 h-28 rounded-full bg-gradient-to-br from-accent via-accent-2 to-accent-2 flex items-center justify-center shadow-xl">
@@ -466,15 +547,17 @@ function InterviewRoomContent({
             )}
           </div>
 
-          {/* Audio Visualizer */}
-          {isInterviewStarted && agentAudioTrack && (
+          {/* Audio Visualizer - FIXED */}
+          {isInterviewStarted && agentAudioTrack && agentAudioTrack?.publication?.track && (
             <div className="w-full max-w-md">
-              <BarVisualizer 
-                state="speaking"
-                barCount={7}
-                trackRef={agentAudioTrack}
-                className="h-16 [&>div]:bg-accent"
-              />
+              <div className="h-16 flex items-center justify-center">
+                <BarVisualizer 
+                  state="speaking"
+                  barCount={7}
+                  trackRef={agentAudioTrack}
+                  className="[&>div]:bg-accent"
+                />
+              </div>
               <p className="text-center text-foreground/60 text-xs mt-2">
                 Analyzing your filler words, tone and clarity
               </p>
@@ -500,23 +583,23 @@ function InterviewRoomContent({
           )}
 
           {/* Latest Roast */}
-            {isInterviewStarted && latestRoast && (
-              <motion.div
-                key={latestRoast}
-                initial={{ opacity: 0, scale: 0.9 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.9 }}
-                className="mt-4 w-full max-w-md bg-accent/10 border-2 border-accent/40 rounded-lg p-3"
-              >
-                <div className="flex items-start gap-2">
-                  <span className="text-xl">💬</span>
-                  <div className="flex-1">
-                    <div className="text-xs font-semibold text-accent mb-1">LATEST ROAST</div>
-                    <p className="text-foreground text-xs font-medium">&quot;{latestRoast}&quot;</p>
-                  </div>
+          {isInterviewStarted && latestRoast && (
+            <motion.div
+              key={latestRoast}
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.9 }}
+              className="mt-4 w-full max-w-md bg-accent/10 border-2 border-accent/40 rounded-lg p-3"
+            >
+              <div className="flex items-start gap-2">
+                <span className="text-xl">💬</span>
+                <div className="flex-1">
+                  <div className="text-xs font-semibold text-accent mb-1">LATEST ROAST</div>
+                  <p className="text-foreground text-xs font-medium">&quot;{latestRoast}&quot;</p>
                 </div>
-              </motion.div>
-            )}
+              </div>
+            </motion.div>
+          )}
 
           {/* Controls */}
           <div className="mt-4">
@@ -574,7 +657,7 @@ function InterviewRoomContent({
               </div>
             </div>
           </div>
-          ) : (
+        ) : (
           <div className="bg-gradient-to-br from-accent/20 via-accent-2/20 to-accent/20 border-2 border-accent/30 rounded-xl p-4 flex flex-col items-center justify-center">
             <div className="text-center space-y-2">
               <div className="flex items-center justify-center gap-2">
@@ -683,15 +766,15 @@ export default function InterviewPage() {
     try {
       await navigator.mediaDevices.getUserMedia({ audio: true });
 
-  const { fetchLivekitToken } = await import("../../lib/fetchLivekitToken");
-  const resp = await fetchLivekitToken(userName, "hroast-room", session?.access_token ?? undefined);
+      const { fetchLivekitToken } = await import("../../lib/fetchLivekitToken");
+      const resp = await fetchLivekitToken(userName, "hroast-room", session?.access_token ?? undefined);
 
       if (!resp?.token) {
         throw new Error("Failed to get token");
       }
 
       setToken(resp.token);
-  const newInterviewId = resp.interviewId || `hroast-${Date.now()}`;
+      const newInterviewId = resp.interviewId || `hroast-${Date.now()}`;
       setInterviewId(newInterviewId);
 
       if (resp.interviewId) {
@@ -726,8 +809,8 @@ export default function InterviewPage() {
       if (t) setIsInterviewStarted(true);
       else throw new Error('Failed to obtain token');
     } catch (err) {
-  console.error('Failed to start Hroast:', err);
-  alert('Failed to start Hroast. See console for details.');
+      console.error('Failed to start Hroast:', err);
+      alert('Failed to start Hroast. See console for details.');
     }
   };
 
@@ -859,71 +942,6 @@ export default function InterviewPage() {
           </div>
         )}
       </motion.div>
-    </div>
-  );
-}
-
-// NEW: Answer Timer Component - Add this entire block
-function AnswerTimer({ 
-  isActive, 
-  maxSeconds = 90 
-}: { 
-  isActive: boolean; 
-  maxSeconds?: number;
-}) {
-  const [secondsLeft, setSecondsLeft] = React.useState(maxSeconds);
-  
-  React.useEffect(() => {
-    if (!isActive) {
-      setSecondsLeft(maxSeconds);
-      return;
-    }
-    
-    setSecondsLeft(maxSeconds);
-    
-    const interval = setInterval(() => {
-      setSecondsLeft(s => {
-        if (s <= 1) {
-          clearInterval(interval);
-          return 0;
-        }
-        return s - 1;
-      });
-    }, 1000);
-    
-    return () => clearInterval(interval);
-  }, [isActive, maxSeconds]);
-  
-  if (!isActive) return null;
-  
-  const percentage = (secondsLeft / maxSeconds) * 100;
-  const isLow = secondsLeft <= 20;
-  const isCritical = secondsLeft <= 10;
-  
-  return (
-    <div className={`bg-surface/50 rounded-lg px-4 py-2 border-2 ${
-      isCritical ? 'border-danger animate-pulse' : isLow ? 'border-warning' : 'border-accent/20'
-    }`}>
-      <div className="flex items-center gap-3">
-        <div className="text-xs font-semibold text-foreground/70">Answer Time</div>
-        <div className="flex items-center gap-2">
-          <div className={`text-2xl font-mono font-bold ${
-            isCritical ? 'text-danger' : isLow ? 'text-warning' : 'text-accent'
-          }`}>
-            {secondsLeft}s
-          </div>
-        </div>
-        <div className="flex-1 bg-surface-2 rounded-full h-2 overflow-hidden min-w-[80px]">
-          <motion.div 
-            className={`h-full ${
-              isCritical ? 'bg-danger' : isLow ? 'bg-warning' : 'bg-accent'
-            }`}
-            initial={{ width: '100%' }}
-            animate={{ width: `${percentage}%` }}
-            transition={{ duration: 0.5 }}
-          />
-        </div>
-      </div>
     </div>
   );
 }
