@@ -815,13 +815,16 @@ async def entrypoint(ctx: JobContext):
         smart_format=True,
         punctuate=True,
     )
-    
+    tts = cartesia.TTS(
+      model="sonic-3",
+      voice="f786b574-daa5-4673-aa0c-cbe3e8534c02",
+   )
     session = AgentSession(
         vad=silero.VAD.load(min_silence_duration=0.6),
         stt=stt,
         llm=llm,
         #tts="elevenlabs/eleven_turbo_v2:pNInz6obpgDQGcFmaJgB",
-        tts="cartesia/sonic-3"
+        tts=tts
         userdata=interview_ctx,
         min_endpointing_delay=0.5,
         max_endpointing_delay=2.0,
