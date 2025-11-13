@@ -729,7 +729,7 @@ async def entrypoint(ctx: JobContext):
         num_questions=int(final_config.get('num_questions', 5)),
         company_name=final_config.get('company_name', 'Our Company'),
         job_title=final_config.get('topic', 'Software Developer'),
-        max_attempts_per_question=2,
+        max_attempts_per_question=1,
         answer_timeout_seconds=90,
     )
     
