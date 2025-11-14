@@ -18,7 +18,7 @@ from livekit.agents import (
     cli,
 )
 from livekit.agents.llm import ChatMessage, ChatContext
-from livekit.plugins import silero, openai, deepgram
+from livekit.plugins import silero, openai, deepgram, cartesia
 
 load_dotenv()
 
