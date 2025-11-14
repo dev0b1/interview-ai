@@ -1,5 +1,5 @@
 /**
- * Complete Real-time Interview Frontend - Fixed Version
+ * Complete Real-time Interview Frontend - FINAL CORRECT VERSION
  * Fixes: Question counter, audio visualizer, answer timer
  */
 
@@ -198,7 +198,7 @@ function useAgentMessages() {
     return () => {
       room.off('dataReceived', handleData);
     };
-  }, [room]);
+  }, [room, currentQuestion, isAnswering]);
 
   return { 
     summary, 
@@ -469,14 +469,13 @@ function InterviewRoomContent({
   
   const [userCount] = React.useState(() => Math.floor(Math.random() * 3001) + 2000);
   
-  // FIXED: Better track detection for audio visualizer
-  const agentParticipant = remotes.find(p => p.identity !== localParticipant?.identity);
-  const agentAudioTracks = useTracks(
-  [{ source: Track.Source.Microphone, withPlaceholder: false }],
-  { onlySubscribed: true }
+  // Get all remote audio tracks, then filter to find agent's track
+  const remoteTracks = useTracks(
+    [{ source: Track.Source.Microphone, withPlaceholder: false }],
+    { onlySubscribed: true }
   );
-  const agentAudioTrack = agentAudioTracks.find(
-  (track) => track.participant.identity !== localParticipant?.identity
+  const agentAudioTrack = remoteTracks.find(
+    (trackRef) => trackRef.participant.identity !== localParticipant?.identity
   );
   
   const [showSummary, setShowSummary] = React.useState(false);
@@ -495,7 +494,8 @@ function InterviewRoomContent({
     console.log('🎯 Current Question:', currentQuestion);
     console.log('⏱️ Is Answering:', isAnswering);
     console.log('🎤 Agent Track:', agentAudioTrack ? 'Present' : 'Missing');
-  }, [currentQuestion, isAnswering, agentAudioTrack]);
+    console.log('👥 Remotes:', remotes.length);
+  }, [currentQuestion, isAnswering, agentAudioTrack, remotes.length]);
 
   return (
     <>
@@ -556,13 +556,13 @@ function InterviewRoomContent({
             )}
           </div>
 
-          {/* Audio Visualizer - FIXED */}
-          {isInterviewStarted && agentAudioTrack && agentAudioTrack?.publication?.track && (
+          {/* Audio Visualizer */}
+          {isInterviewStarted && agentAudioTrack && (
             <div className="w-full max-w-md">
               <div className="h-16 flex items-center justify-center">
                 <BarVisualizer 
                   state="speaking"
-                  barCount={10}
+                  barCount={7}
                   trackRef={agentAudioTrack}
                   className="[&>div]:bg-accent"
                 />
